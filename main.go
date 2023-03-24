@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -42,6 +43,11 @@ const (
 	FAILED     = "Failed"
 )
 
+type S3Object struct {
+	Bucket string `json:"bucket"`
+	Key    string `json:"key"`
+}
+
 type User struct {
 	ID    int    `csv:"id" jaFieldName:"ID" validate:"required"`
 	Name  string `csv:"name" jaFieldName:"ユーザ名" validate:"required"`
@@ -66,6 +72,16 @@ type ImportDetail struct {
 	Detail         string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+}
+
+type BaseRepository struct {
+	db *gorm.DB
+}
+
+func (b *BaseRepository) Save(obj interface{}) error {
+	return b.db.Clauses(clause.OnConflict{
+		UpdateAll: true,
+	}).Create(obj).Error
 }
 
 func dbInit() {
@@ -108,20 +124,27 @@ func Init() {
 	ja_translations.RegisterDefaultTranslations(validate, trans)
 }
 
-func s3lambda(ctx context.Context, event events.S3Event) (interface{}, error) {
-	for _, record := range event.Records {
-		// recordの中にイベント発生させたS3のBucket名やKeyが入っている
-		bucket := record.S3.Bucket.Name
-		key := record.S3.Object.Key
+func s3lambda(ctx context.Context, sqsEvent events.SQSEvent) (interface{}, error) {
+	baseRepository := &BaseRepository{
+		db: db,
+	}
+
+	for _, record := range sqsEvent.Records {
+		b := []byte(record.Body)
+		var s3Object S3Object
+		if err := json.Unmarshal(b, &s3Object); err != nil {
+			return nil, err
+		}
+
+		bucket := s3Object.Bucket
+		key := s3Object.Key
 
 		importStatus := ImportStatus{}
 		if err := db.Where("file_path = ?", key).First(&importStatus).Error; err != nil {
 			return nil, err
 		}
 		importStatus.Status = PROCESSING
-		if err := db.Clauses(clause.OnConflict{
-			UpdateAll: true,
-		}).Create(&importStatus).Error; err != nil {
+		if err := baseRepository.Save(&importStatus); err != nil {
 			return nil, err
 		}
 
@@ -136,45 +159,11 @@ func s3lambda(ctx context.Context, event events.S3Event) (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
-		var users []User
-		err = csvutil.Unmarshal(csv, &users)
-		if err != nil {
+		if err := importCSV(csv, importStatus, baseRepository); err != nil {
 			return nil, err
 		}
-
-		importStatus.RecordCount = len(users)
-		if err := db.Clauses(clause.OnConflict{
-			UpdateAll: true,
-		}).Create(&importStatus).Error; err != nil {
-			return nil, err
-		}
-
-		for i, user := range users {
-			if err := validate.Struct(user); err != nil {
-				importDetail := ImportDetail{
-					ImportStatusID: importStatus.ID,
-					RowNumber:      i + 1,
-					Detail:         strings.Join(GetErrorMessages(err), ","),
-				}
-				if err := db.Clauses(clause.OnConflict{
-					UpdateAll: true,
-				}).Create(&importDetail).Error; err != nil {
-					return nil, err
-				}
-			}
-
-			importStatus.ProcessedCount = i + 1
-			if err := db.Clauses(clause.OnConflict{
-				UpdateAll: true,
-			}).Create(&importStatus).Error; err != nil {
-				return nil, err
-			}
-		}
-
 		importStatus.Status = FINISHED
-		if err := db.Clauses(clause.OnConflict{
-			UpdateAll: true,
-		}).Create(&importStatus).Error; err != nil {
+		if err := baseRepository.Save(&importStatus); err != nil {
 			return nil, err
 		}
 	}
@@ -182,6 +171,38 @@ func s3lambda(ctx context.Context, event events.S3Event) (interface{}, error) {
 		StatusCode uint `json:"statusCode"`
 	}{StatusCode: 200}
 	return resp, nil
+}
+
+func importCSV(csv []byte, importStatus ImportStatus, baseRepository *BaseRepository) error {
+	var users []User
+	err := csvutil.Unmarshal(csv, &users)
+	if err != nil {
+		return err
+	}
+
+	importStatus.RecordCount = len(users)
+	if err := baseRepository.Save(&importStatus); err != nil {
+		return err
+	}
+
+	for i, user := range users {
+		if err := validate.Struct(user); err != nil {
+			importDetail := ImportDetail{
+				ImportStatusID: importStatus.ID,
+				RowNumber:      i + 1,
+				Detail:         strings.Join(GetErrorMessages(err), ","),
+			}
+			if err := baseRepository.Save(&importDetail); err != nil {
+				return err
+			}
+		}
+
+		importStatus.ProcessedCount = i + 1
+		if err := baseRepository.Save(&importStatus); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func GetErrorMessages(err error) []string {
