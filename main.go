@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"reflect"
 	"strings"
@@ -42,11 +43,6 @@ const (
 	FINISHED   = "Finished"
 	FAILED     = "Failed"
 )
-
-type S3Object struct {
-	Bucket string `json:"bucket"`
-	Key    string `json:"key"`
-}
 
 type User struct {
 	ID    int    `csv:"id" jaFieldName:"ID" validate:"required"`
@@ -131,13 +127,14 @@ func s3lambda(ctx context.Context, sqsEvent events.SQSEvent) (interface{}, error
 
 	for _, record := range sqsEvent.Records {
 		b := []byte(record.Body)
-		var s3Object S3Object
+		s3Object := events.S3EventRecord{}
 		if err := json.Unmarshal(b, &s3Object); err != nil {
 			return nil, err
 		}
+		log.Printf("%+v\n", s3Object)
 
-		bucket := s3Object.Bucket
-		key := s3Object.Key
+		bucket := s3Object.S3.Bucket.Name
+		key := s3Object.S3.Object.Key
 
 		importStatus := ImportStatus{}
 		if err := db.Where("file_path = ?", key).First(&importStatus).Error; err != nil {
