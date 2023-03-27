@@ -12,6 +12,9 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/saintfish/chardet"
+	"golang.org/x/text/encoding/japanese"
+	"golang.org/x/text/transform"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -187,6 +190,11 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 		ch <- err
 		return
 	}
+	csv, err = convertToUTF8(csv)
+	if err != nil {
+		ch <- err
+		return
+	}
 	if err := importCSV(csv, &importStatus, baseRepository); err != nil {
 		ch <- err
 		return
@@ -255,6 +263,27 @@ func sendMessage(msg any, queueURL string) error {
 		return err
 	}
 	return nil
+}
+
+func convertToUTF8(bytes []byte) ([]byte, error) {
+	detector := chardet.NewTextDetector()
+	result, err := detector.DetectBest(bytes)
+	if err != nil {
+		return nil, err
+	}
+	converted := []byte{}
+	switch result.Charset {
+	case "windows-1252":
+		converted, err = io.ReadAll(transform.NewReader(strings.NewReader(string(bytes)), japanese.ShiftJIS.NewDecoder()))
+		if err != nil {
+			return nil, err
+		}
+	case "UTF-8":
+		converted = bytes
+	default:
+		return nil, fmt.Errorf("invalid charset")
+	}
+	return converted, nil
 }
 
 func GetErrorMessages(err error) []string {
