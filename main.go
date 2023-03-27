@@ -36,6 +36,7 @@ var (
 	sess     *session.Session
 	svc      *s3.S3
 	db       *gorm.DB
+	sqsSvc   *sqs.SQS
 )
 
 const (
@@ -105,6 +106,9 @@ func Init() {
 
 	// S3クライアント
 	svc = s3.New(sess)
+
+	// SQSのクライアントを作成
+	sqsSvc = sqs.New(sess)
 
 	ja := ja.New()
 	uni = ut.New(ja, ja)
@@ -220,20 +224,14 @@ func importCSV(csv []byte, importStatus *ImportStatus, baseRepository *BaseRepos
 			}
 		} else {
 			// バリデーションOKの場合
-			// 環境変数からキューURLを取得
-			queueURL := os.Getenv("QUEUE_URL")
-			// AWSのセッションを作成
-			sess := session.Must(session.NewSession(&aws.Config{
-				Region: aws.String("ap-northeast-1"),
-			}))
-			// SQSのクライアントを作成
-			sqsSvc := sqs.New(sess)
-
 			// メッセージをJSON化
 			msgJson, err := json.Marshal(user)
 			if err != nil {
 				return err
 			}
+
+			// 環境変数からキューURLを取得
+			queueURL := os.Getenv("QUEUE_URL")
 			// SQSに送信 (sqsSvc, queueURLは準備のときに作成したもの)
 			if _, err := sqsSvc.SendMessage(&sqs.SendMessageInput{
 				MessageBody: aws.String(string(msgJson)),
