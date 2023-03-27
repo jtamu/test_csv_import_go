@@ -125,9 +125,17 @@ func s3lambda(ctx context.Context, sqsEvent events.SQSEvent) (interface{}, error
 		db: db,
 	}
 
-	for _, record := range sqsEvent.Records {
-		if err := processEventRecord(record, baseRepository); err != nil {
-			// 処理中にエラーが発生しても後続を処理する
+	ch := make([]chan error, len(sqsEvent.Records))
+	for i, _ := range ch {
+		ch[i] = make(chan error)
+	}
+
+	for i, record := range sqsEvent.Records {
+		go processEventRecord(record, baseRepository, ch[i])
+	}
+
+	for i, _ := range ch {
+		if err := <-ch[i]; err != nil {
 			log.Printf("%+v\n", err)
 		}
 	}
@@ -138,11 +146,11 @@ func s3lambda(ctx context.Context, sqsEvent events.SQSEvent) (interface{}, error
 	return resp, nil
 }
 
-func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository) error {
+func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository, ch chan<- error) {
 	b := []byte(record.Body)
 	s3Object := events.S3EventRecord{}
 	if err := json.Unmarshal(b, &s3Object); err != nil {
-		return err
+		ch <- err
 	}
 	log.Printf("%+v\n", s3Object)
 
@@ -151,11 +159,11 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 
 	var importStatus ImportStatus
 	if err := db.Where("file_path = ?", key).First(&importStatus).Error; err != nil {
-		return err
+		ch <- err
 	}
 	importStatus.Status = PROCESSING
 	if err := baseRepository.Save(&importStatus); err != nil {
-		return err
+		ch <- err
 	}
 
 	obj, err := svc.GetObject(&s3.GetObjectInput{
@@ -163,21 +171,21 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 		Key:    aws.String(key),
 	})
 	if err != nil {
-		return err
+		ch <- err
 	}
 	csv, err := io.ReadAll(obj.Body)
 	if err != nil {
-		return err
+		ch <- err
 	}
 	if err := importCSV(csv, &importStatus, baseRepository); err != nil {
-		return err
+		ch <- err
 	}
 
 	importStatus.Status = FINISHED
 	if err := baseRepository.Save(&importStatus); err != nil {
-		return err
+		ch <- err
 	}
-	return nil
+	ch <- nil
 }
 
 func importCSV(csv []byte, importStatus *ImportStatus, baseRepository *BaseRepository) error {
