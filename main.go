@@ -21,6 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/go-playground/locales/ja"
 	ut "github.com/go-playground/universal-translator"
 	"github.com/jszwec/csvutil"
@@ -215,6 +216,29 @@ func importCSV(csv []byte, importStatus *ImportStatus, baseRepository *BaseRepos
 				Detail:         strings.Join(GetErrorMessages(err), ","),
 			}
 			if err := baseRepository.Save(&importDetail); err != nil {
+				return err
+			}
+		} else {
+			// バリデーションOKの場合
+			// 環境変数からキューURLを取得
+			queueURL := os.Getenv("QUEUE_URL")
+			// AWSのセッションを作成
+			sess := session.Must(session.NewSession(&aws.Config{
+				Region: aws.String("ap-northeast-1"),
+			}))
+			// SQSのクライアントを作成
+			sqsSvc := sqs.New(sess)
+
+			// メッセージをJSON化
+			msgJson, err := json.Marshal(user)
+			if err != nil {
+				return err
+			}
+			// SQSに送信 (sqsSvc, queueURLは準備のときに作成したもの)
+			if _, err := sqsSvc.SendMessage(&sqs.SendMessageInput{
+				MessageBody: aws.String(string(msgJson)),
+				QueueUrl:    &queueURL,
+			}); err != nil {
 				return err
 			}
 		}
