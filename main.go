@@ -151,6 +151,7 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 	s3Object := events.S3EventRecord{}
 	if err := json.Unmarshal(b, &s3Object); err != nil {
 		ch <- err
+		return
 	}
 	log.Printf("%+v\n", s3Object)
 
@@ -160,10 +161,12 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 	var importStatus ImportStatus
 	if err := db.Where("file_path = ?", key).First(&importStatus).Error; err != nil {
 		ch <- err
+		return
 	}
 	importStatus.Status = PROCESSING
 	if err := baseRepository.Save(&importStatus); err != nil {
 		ch <- err
+		return
 	}
 
 	obj, err := svc.GetObject(&s3.GetObjectInput{
@@ -172,18 +175,22 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 	})
 	if err != nil {
 		ch <- err
+		return
 	}
 	csv, err := io.ReadAll(obj.Body)
 	if err != nil {
 		ch <- err
+		return
 	}
 	if err := importCSV(csv, &importStatus, baseRepository); err != nil {
 		ch <- err
+		return
 	}
 
 	importStatus.Status = FINISHED
 	if err := baseRepository.Save(&importStatus); err != nil {
 		ch <- err
+		return
 	}
 	ch <- nil
 }
