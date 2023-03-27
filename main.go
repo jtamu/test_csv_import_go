@@ -126,51 +126,61 @@ func s3lambda(ctx context.Context, sqsEvent events.SQSEvent) (interface{}, error
 	}
 
 	for _, record := range sqsEvent.Records {
-		b := []byte(record.Body)
-		s3Object := events.S3EventRecord{}
-		if err := json.Unmarshal(b, &s3Object); err != nil {
-			return nil, err
-		}
-		log.Printf("%+v\n", s3Object)
-
-		bucket := s3Object.S3.Bucket.Name
-		key := s3Object.S3.Object.Key
-
-		importStatus := ImportStatus{}
-		if err := db.Where("file_path = ?", key).First(&importStatus).Error; err != nil {
-			return nil, err
-		}
-		importStatus.Status = PROCESSING
-		if err := baseRepository.Save(&importStatus); err != nil {
-			return nil, err
-		}
-
-		obj, err := svc.GetObject(&s3.GetObjectInput{
-			Bucket: aws.String(bucket),
-			Key:    aws.String(key),
-		})
-		if err != nil {
-			return nil, err
-		}
-		csv, err := io.ReadAll(obj.Body)
-		if err != nil {
-			return nil, err
-		}
-		if err := importCSV(csv, importStatus, baseRepository); err != nil {
-			return nil, err
-		}
-		importStatus.Status = FINISHED
-		if err := baseRepository.Save(&importStatus); err != nil {
-			return nil, err
+		if err := processEventRecord(record, baseRepository); err != nil {
+			// 処理中にエラーが発生しても後続を処理する
+			log.Printf("%+v\n", err)
 		}
 	}
+
 	resp := &struct {
 		StatusCode uint `json:"statusCode"`
 	}{StatusCode: 200}
 	return resp, nil
 }
 
-func importCSV(csv []byte, importStatus ImportStatus, baseRepository *BaseRepository) error {
+func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository) error {
+	b := []byte(record.Body)
+	s3Object := events.S3EventRecord{}
+	if err := json.Unmarshal(b, &s3Object); err != nil {
+		return err
+	}
+	log.Printf("%+v\n", s3Object)
+
+	bucket := s3Object.S3.Bucket.Name
+	key := s3Object.S3.Object.Key
+
+	var importStatus ImportStatus
+	if err := db.Where("file_path = ?", key).First(&importStatus).Error; err != nil {
+		return err
+	}
+	importStatus.Status = PROCESSING
+	if err := baseRepository.Save(&importStatus); err != nil {
+		return err
+	}
+
+	obj, err := svc.GetObject(&s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return err
+	}
+	csv, err := io.ReadAll(obj.Body)
+	if err != nil {
+		return err
+	}
+	if err := importCSV(csv, &importStatus, baseRepository); err != nil {
+		return err
+	}
+
+	importStatus.Status = FINISHED
+	if err := baseRepository.Save(&importStatus); err != nil {
+		return err
+	}
+	return nil
+}
+
+func importCSV(csv []byte, importStatus *ImportStatus, baseRepository *BaseRepository) error {
 	var users []User
 	err := csvutil.Unmarshal(csv, &users)
 	if err != nil {
