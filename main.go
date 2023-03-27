@@ -224,19 +224,10 @@ func importCSV(csv []byte, importStatus *ImportStatus, baseRepository *BaseRepos
 			}
 		} else {
 			// バリデーションOKの場合
-			// メッセージをJSON化
-			msgJson, err := json.Marshal(user)
-			if err != nil {
-				return err
-			}
-
 			// 環境変数からキューURLを取得
 			queueURL := os.Getenv("QUEUE_URL")
-			// SQSに送信 (sqsSvc, queueURLは準備のときに作成したもの)
-			if _, err := sqsSvc.SendMessage(&sqs.SendMessageInput{
-				MessageBody: aws.String(string(msgJson)),
-				QueueUrl:    &queueURL,
-			}); err != nil {
+
+			if err := sendMessage(user, queueURL); err != nil {
 				return err
 			}
 		}
@@ -245,6 +236,23 @@ func importCSV(csv []byte, importStatus *ImportStatus, baseRepository *BaseRepos
 		if err := baseRepository.Save(&importStatus); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func sendMessage(msg any, queueURL string) error {
+	// メッセージをJSON化
+	msgJson, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	// SQSに送信 (sqsSvc, queueURLは準備のときに作成したもの)
+	if _, err := sqsSvc.SendMessage(&sqs.SendMessageInput{
+		MessageBody: aws.String(string(msgJson)),
+		QueueUrl:    &queueURL,
+	}); err != nil {
+		return err
 	}
 	return nil
 }
