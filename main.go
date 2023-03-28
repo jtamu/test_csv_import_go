@@ -69,7 +69,7 @@ type ImportStatus struct {
 type ImportDetail struct {
 	ID             int `gorm:"primaryKey"`
 	ImportStatusID int
-	RowNumber      int
+	RowNumber      *int
 	Detail         string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
@@ -194,6 +194,19 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 	}
 	csv, err = convertToUTF8(csv)
 	if err != nil {
+		// TODO トランザクション
+		importStatus.Status = FAILED
+		if err := baseRepository.Save(&importStatus); err != nil {
+			return err
+		}
+		importDetail := ImportDetail{
+			ImportStatusID: importStatus.ID,
+			RowNumber:      nil,
+			Detail:         err.Error(),
+		}
+		if err := baseRepository.Save(&importDetail); err != nil {
+			return err
+		}
 		return err
 	}
 	if err := importCSV(csv, &importStatus, baseRepository); err != nil {
@@ -220,10 +233,11 @@ func importCSV(csv []byte, importStatus *ImportStatus, baseRepository *BaseRepos
 	}
 
 	for i, user := range users {
+		row := i + 1
 		if err := validate.Struct(user); err != nil {
 			importDetail := ImportDetail{
 				ImportStatusID: importStatus.ID,
-				RowNumber:      i + 1,
+				RowNumber:      &row,
 				Detail:         strings.Join(GetErrorMessages(err), ","),
 			}
 			if err := baseRepository.Save(&importDetail); err != nil {
@@ -239,7 +253,7 @@ func importCSV(csv []byte, importStatus *ImportStatus, baseRepository *BaseRepos
 			}
 		}
 
-		importStatus.ProcessedCount = i + 1
+		importStatus.ProcessedCount = row
 		if err := baseRepository.Save(&importStatus); err != nil {
 			return err
 		}
@@ -280,7 +294,7 @@ func convertToUTF8(bytes []byte) ([]byte, error) {
 	case "UTF-8":
 		converted = bytes
 	default:
-		return nil, fmt.Errorf("invalid charset")
+		return nil, fmt.Errorf("CSVファイルの文字コードが不正です")
 	}
 	return converted, nil
 }
