@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -219,6 +221,38 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 		return err
 	}
 
+	scanner := bufio.NewScanner(bytes.NewBuffer(csv))
+	for scanner.Scan() {
+		unquoted := strings.ReplaceAll(scanner.Text(), "\"", "")
+		headers := strings.Split(unquoted, ",")
+
+		notExistHeaders := []string{}
+
+		t := reflect.TypeOf(User{})
+	L:
+		for i := 0; i < t.NumField(); i++ {
+			csvTag := t.Field(i).Tag.Get("csv")
+			for _, header := range headers {
+				if header == csvTag {
+					continue L
+				}
+			}
+			notExistHeaders = append(notExistHeaders, csvTag)
+		}
+		if len(notExistHeaders) > 0 {
+			importDetail := ImportDetail{
+				ImportStatusID: importStatus.ID,
+				RowNumber:      nil,
+				Detail:         fmt.Sprintf("CSVファイルのヘッダが欠損しています: %s", strings.Join(notExistHeaders, ",")),
+			}
+			if err := baseRepository.Save(&importDetail); err != nil {
+				return err
+			}
+			return err
+		}
+		break
+	}
+
 	if err := importCSV(csv, &importStatus, baseRepository); err != nil {
 		return err
 	}
@@ -316,13 +350,14 @@ func convertToUTF8(bytes []byte) ([]byte, error) {
 		return nil, err
 	}
 	converted := []byte{}
-	switch result.Charset {
-	case "Shift_JIS", "windows-1252":
+	s := result.Charset
+	switch {
+	case s == "Shift_JIS" || s == "windows-1252":
 		converted, err = io.ReadAll(transform.NewReader(strings.NewReader(string(bytes)), japanese.ShiftJIS.NewDecoder()))
 		if err != nil {
 			return nil, err
 		}
-	case "UTF-8":
+	case s == "UTF-8" || strings.Contains(s, "ISO-8859"):
 		converted = bytes
 	default:
 		return nil, fmt.Errorf("CSVファイルの文字コードが不正です")
