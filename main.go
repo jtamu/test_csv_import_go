@@ -237,6 +237,11 @@ func importCSV(csv []byte, importStatus *ImportStatus, baseRepository *BaseRepos
 		if err := importRow(user, row, importStatus, baseRepository); err != nil {
 			return err
 		}
+
+		importStatus.ProcessedCount = row
+		if err := baseRepository.Save(&importStatus); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -251,19 +256,39 @@ func importRow(user *User, row int, importStatus *ImportStatus, baseRepository *
 		if err := baseRepository.Save(&importDetail); err != nil {
 			return err
 		}
-	} else {
-		// バリデーションOKの場合
-		// 環境変数からキューURLを取得
-		queueURL := os.Getenv("QUEUE_URL")
-
-		if err := sendMessage(user, queueURL); err != nil {
+		return nil
+	}
+	if err := validateUniquenessOfEmail(user.Email); err != nil {
+		importDetail := ImportDetail{
+			ImportStatusID: importStatus.ID,
+			RowNumber:      &row,
+			Detail:         err.Error(),
+		}
+		if err := baseRepository.Save(&importDetail); err != nil {
 			return err
 		}
+		return nil
 	}
 
-	importStatus.ProcessedCount = row
-	if err := baseRepository.Save(&importStatus); err != nil {
+	// バリデーションOKの場合
+	// 環境変数からキューURLを取得
+	queueURL := os.Getenv("QUEUE_URL")
+
+	if err := sendMessage(user, queueURL); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validateUniquenessOfEmail(email string) error {
+	users := []User{}
+	if err := db.Find(&users).Error; err != nil {
+		return err
+	}
+	for _, user := range users {
+		if email == user.Email {
+			return fmt.Errorf("メールアドレスが重複しています")
+		}
 	}
 	return nil
 }
