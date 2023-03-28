@@ -52,7 +52,7 @@ const (
 type User struct {
 	ID    int    `csv:"id" jaFieldName:"ID" validate:"required"`
 	Name  string `csv:"name" jaFieldName:"ユーザ名" validate:"required"`
-	Email string `csv:"email" jaFieldName:"メールアドレス" validate:"required"`
+	Email string `csv:"email" jaFieldName:"メールアドレス" validate:"required,email-unique"`
 }
 
 type ImportStatus struct {
@@ -126,6 +126,15 @@ func Init() {
 		return fieldName
 	})
 	ja_translations.RegisterDefaultTranslations(validate, trans)
+
+	validate.RegisterValidation("email-unique", validateUniquenessOfEmail)
+	validate.RegisterTranslation("email-unique", trans, func(ut ut.Translator) error {
+		trans.Add("email-unique", "{0}が重複しています", false)
+		return nil
+	}, func(ut ut.Translator, fe validator.FieldError) string {
+		msg, _ := trans.T(fe.Tag(), fe.Field())
+		return msg
+	})
 }
 
 func s3lambda(ctx context.Context, sqsEvent events.SQSEvent) (interface{}, error) {
@@ -258,17 +267,6 @@ func importRow(user *User, row int, importStatus *ImportStatus, baseRepository *
 		}
 		return nil
 	}
-	if err := validateUniquenessOfEmail(user.Email); err != nil {
-		importDetail := ImportDetail{
-			ImportStatusID: importStatus.ID,
-			RowNumber:      &row,
-			Detail:         err.Error(),
-		}
-		if err := baseRepository.Save(&importDetail); err != nil {
-			return err
-		}
-		return nil
-	}
 
 	// バリデーションOKの場合
 	// 環境変数からキューURLを取得
@@ -280,17 +278,15 @@ func importRow(user *User, row int, importStatus *ImportStatus, baseRepository *
 	return nil
 }
 
-func validateUniquenessOfEmail(email string) error {
-	users := []User{}
-	if err := db.Find(&users).Error; err != nil {
-		return err
-	}
+func validateUniquenessOfEmail(fl validator.FieldLevel) bool {
+	users := []*User{}
+	db.Find(&users)
 	for _, user := range users {
-		if email == user.Email {
-			return fmt.Errorf("メールアドレスが重複しています")
+		if fl.Field().String() == user.Email {
+			return false
 		}
 	}
-	return nil
+	return true
 }
 
 func sendMessage(msg any, queueURL string) error {
