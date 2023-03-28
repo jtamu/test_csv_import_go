@@ -221,7 +221,7 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 }
 
 func importCSV(csv []byte, importStatus *ImportStatus, baseRepository *BaseRepository) error {
-	var users []User
+	var users []*User
 	err := csvutil.Unmarshal(csv, &users)
 	if err != nil {
 		return err
@@ -234,29 +234,36 @@ func importCSV(csv []byte, importStatus *ImportStatus, baseRepository *BaseRepos
 
 	for i, user := range users {
 		row := i + 1
-		if err := validate.Struct(user); err != nil {
-			importDetail := ImportDetail{
-				ImportStatusID: importStatus.ID,
-				RowNumber:      &row,
-				Detail:         strings.Join(GetErrorMessages(err), ","),
-			}
-			if err := baseRepository.Save(&importDetail); err != nil {
-				return err
-			}
-		} else {
-			// バリデーションOKの場合
-			// 環境変数からキューURLを取得
-			queueURL := os.Getenv("QUEUE_URL")
-
-			if err := sendMessage(user, queueURL); err != nil {
-				return err
-			}
-		}
-
-		importStatus.ProcessedCount = row
-		if err := baseRepository.Save(&importStatus); err != nil {
+		if err := importRow(user, row, importStatus, baseRepository); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func importRow(user *User, row int, importStatus *ImportStatus, baseRepository *BaseRepository) error {
+	if err := validate.Struct(user); err != nil {
+		importDetail := ImportDetail{
+			ImportStatusID: importStatus.ID,
+			RowNumber:      &row,
+			Detail:         strings.Join(GetErrorMessages(err), ","),
+		}
+		if err := baseRepository.Save(&importDetail); err != nil {
+			return err
+		}
+	} else {
+		// バリデーションOKの場合
+		// 環境変数からキューURLを取得
+		queueURL := os.Getenv("QUEUE_URL")
+
+		if err := sendMessage(user, queueURL); err != nil {
+			return err
+		}
+	}
+
+	importStatus.ProcessedCount = row
+	if err := baseRepository.Save(&importStatus); err != nil {
+		return err
 	}
 	return nil
 }
