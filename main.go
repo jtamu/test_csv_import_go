@@ -218,6 +218,7 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 		}
 		return err
 	}
+
 	if err := importCSV(csv, &importStatus, baseRepository); err != nil {
 		return err
 	}
@@ -279,10 +280,12 @@ func importRow(user *User, row int, importStatus *ImportStatus, baseRepository *
 }
 
 func validateUniquenessOfEmail(fl validator.FieldLevel) bool {
-	users := []*User{}
-	db.Find(&users)
-	for _, user := range users {
-		if fl.Field().String() == user.Email {
+	emails := []string{}
+	if err := db.Model(&User{}).Pluck("email", &emails).Error; err != nil {
+		panic(err)
+	}
+	for _, email := range emails {
+		if fl.Field().String() == email {
 			return false
 		}
 	}
