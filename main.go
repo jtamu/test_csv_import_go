@@ -221,6 +221,23 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 		return err
 	}
 
+	if err := validateHeader(csv, &importStatus, baseRepository); err != nil {
+		return err
+	}
+
+	if err := importCSV(csv, &importStatus, baseRepository); err != nil {
+		// TODO: エラーハンドリング
+		return err
+	}
+
+	importStatus.Status = FINISHED
+	if err := baseRepository.Save(&importStatus); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateHeader(csv []byte, importStatus *ImportStatus, baseRepository *BaseRepository) error {
 	scanner := bufio.NewScanner(bytes.NewBuffer(csv))
 	for scanner.Scan() {
 		unquoted := strings.ReplaceAll(scanner.Text(), "\"", "")
@@ -240,26 +257,19 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 			notExistHeaders = append(notExistHeaders, csvTag)
 		}
 		if len(notExistHeaders) > 0 {
+			err := fmt.Errorf("CSVファイルのヘッダが欠損しています: %s", strings.Join(notExistHeaders, ","))
 			importDetail := ImportDetail{
 				ImportStatusID: importStatus.ID,
 				RowNumber:      nil,
-				Detail:         fmt.Sprintf("CSVファイルのヘッダが欠損しています: %s", strings.Join(notExistHeaders, ",")),
+				Detail:         err.Error(),
 			}
 			if err := baseRepository.Save(&importDetail); err != nil {
 				return err
 			}
 			return err
 		}
+		// ヘッダのみでいいので1行読み終わったら抜ける
 		break
-	}
-
-	if err := importCSV(csv, &importStatus, baseRepository); err != nil {
-		return err
-	}
-
-	importStatus.Status = FINISHED
-	if err := baseRepository.Save(&importStatus); err != nil {
-		return err
 	}
 	return nil
 }
