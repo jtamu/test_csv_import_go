@@ -222,11 +222,23 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 	}
 
 	if err := validateHeader(csv, &importStatus, baseRepository); err != nil {
+		// TODO: エラーハンドリング
+		importStatus.Status = FAILED
+		if err := baseRepository.Save(&importStatus); err != nil {
+			return err
+		}
+		importDetail := ImportDetail{
+			ImportStatusID: importStatus.ID,
+			RowNumber:      nil,
+			Detail:         err.Error(),
+		}
+		if err := baseRepository.Save(&importDetail); err != nil {
+			return err
+		}
 		return err
 	}
 
 	if err := importCSV(csv, &importStatus, baseRepository); err != nil {
-		// TODO: エラーハンドリング
 		return err
 	}
 
@@ -257,16 +269,7 @@ func validateHeader(csv []byte, importStatus *ImportStatus, baseRepository *Base
 			notExistHeaders = append(notExistHeaders, csvTag)
 		}
 		if len(notExistHeaders) > 0 {
-			err := fmt.Errorf("CSVファイルのヘッダが欠損しています: %s", strings.Join(notExistHeaders, ","))
-			importDetail := ImportDetail{
-				ImportStatusID: importStatus.ID,
-				RowNumber:      nil,
-				Detail:         err.Error(),
-			}
-			if err := baseRepository.Save(&importDetail); err != nil {
-				return err
-			}
-			return err
+			return fmt.Errorf("CSVファイルのヘッダが欠損しています: %s", strings.Join(notExistHeaders, ","))
 		}
 		// ヘッダのみでいいので1行読み終わったら抜ける
 		break
