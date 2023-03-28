@@ -139,7 +139,14 @@ func s3lambda(ctx context.Context, sqsEvent events.SQSEvent) (interface{}, error
 	}
 
 	for i, record := range sqsEvent.Records {
-		go processEventRecord(record, baseRepository, ch[i])
+		// NOTE: 先にループが回ってからgoroutineにスイッチするので、直接recordを渡してしまうと全てのgoroutineに最後のrecordのみが渡されてしまう
+		go func(msg events.SQSMessage, chl chan<- error) {
+			if err := processEventRecord(msg, baseRepository); err != nil {
+				chl <- err
+				return
+			}
+			chl <- nil
+		}(record, ch[i])
 	}
 
 	for i, _ := range ch {
@@ -154,12 +161,11 @@ func s3lambda(ctx context.Context, sqsEvent events.SQSEvent) (interface{}, error
 	return resp, nil
 }
 
-func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository, ch chan<- error) {
+func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository) error {
 	b := []byte(record.Body)
 	s3Object := events.S3EventRecord{}
 	if err := json.Unmarshal(b, &s3Object); err != nil {
-		ch <- err
-		return
+		return err
 	}
 	log.Printf("%+v\n", s3Object)
 
@@ -168,13 +174,11 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 
 	var importStatus ImportStatus
 	if err := db.Where("file_path = ?", key).First(&importStatus).Error; err != nil {
-		ch <- err
-		return
+		return err
 	}
 	importStatus.Status = PROCESSING
 	if err := baseRepository.Save(&importStatus); err != nil {
-		ch <- err
-		return
+		return err
 	}
 
 	obj, err := svc.GetObject(&s3.GetObjectInput{
@@ -182,30 +186,25 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 		Key:    aws.String(key),
 	})
 	if err != nil {
-		ch <- err
-		return
+		return err
 	}
 	csv, err := io.ReadAll(obj.Body)
 	if err != nil {
-		ch <- err
-		return
+		return err
 	}
 	csv, err = convertToUTF8(csv)
 	if err != nil {
-		ch <- err
-		return
+		return err
 	}
 	if err := importCSV(csv, &importStatus, baseRepository); err != nil {
-		ch <- err
-		return
+		return err
 	}
 
 	importStatus.Status = FINISHED
 	if err := baseRepository.Save(&importStatus); err != nil {
-		ch <- err
-		return
+		return err
 	}
-	ch <- nil
+	return nil
 }
 
 func importCSV(csv []byte, importStatus *ImportStatus, baseRepository *BaseRepository) error {
@@ -273,7 +272,7 @@ func convertToUTF8(bytes []byte) ([]byte, error) {
 	}
 	converted := []byte{}
 	switch result.Charset {
-	case "windows-1252":
+	case "Shift_JIS", "windows-1252":
 		converted, err = io.ReadAll(transform.NewReader(strings.NewReader(string(bytes)), japanese.ShiftJIS.NewDecoder()))
 		if err != nil {
 			return nil, err
