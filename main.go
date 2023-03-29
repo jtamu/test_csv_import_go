@@ -12,7 +12,9 @@ import (
 	"os"
 	"reflect"
 	"strings"
-	"time"
+
+	"my-s3-function-go/app/domain/importstatus"
+	"my-s3-function-go/app/repository"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/saintfish/chardet"
@@ -20,7 +22,6 @@ import (
 	"golang.org/x/text/transform"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -56,36 +57,6 @@ type User struct {
 	ID    int    `csv:"id" jaFieldName:"ID" validate:"required"`
 	Name  string `csv:"name" jaFieldName:"ユーザ名" validate:"required"`
 	Email string `csv:"email" jaFieldName:"メールアドレス" validate:"required,email-unique"`
-}
-
-type ImportStatus struct {
-	ID             int `gorm:"primaryKey"`
-	FileName       string
-	FilePath       string
-	RecordCount    int
-	ProcessedCount int
-	Status         string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-}
-
-type ImportDetail struct {
-	ID             int `gorm:"primaryKey"`
-	ImportStatusID int
-	RowNumber      *int
-	Detail         string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-}
-
-type BaseRepository struct {
-	db *gorm.DB
-}
-
-func (b *BaseRepository) Save(obj interface{}) error {
-	return b.db.Clauses(clause.OnConflict{
-		UpdateAll: true,
-	}).Create(obj).Error
 }
 
 func dbInit() {
@@ -141,9 +112,8 @@ func Init() {
 }
 
 func s3lambda(ctx context.Context, sqsEvent events.SQSEvent) (interface{}, error) {
-	baseRepository := &BaseRepository{
-		db: db,
-	}
+	baseRepository := repository.NewBaseRepository(db)
+	importStatusRepository := repository.NewImportStatusRepository(baseRepository)
 
 	ch := make([]chan error, len(sqsEvent.Records))
 	for i, _ := range ch {
@@ -153,7 +123,7 @@ func s3lambda(ctx context.Context, sqsEvent events.SQSEvent) (interface{}, error
 	for i, record := range sqsEvent.Records {
 		// NOTE: 先にループが回ってからgoroutineにスイッチするので、直接recordを渡してしまうと全てのgoroutineに最後のrecordのみが渡されてしまう
 		go func(msg events.SQSMessage, chl chan<- error) {
-			if err := processEventRecord(msg, baseRepository); err != nil {
+			if err := processEventRecord(msg, baseRepository, importStatusRepository); err != nil {
 				chl <- err
 				return
 			}
@@ -173,7 +143,7 @@ func s3lambda(ctx context.Context, sqsEvent events.SQSEvent) (interface{}, error
 	return resp, nil
 }
 
-func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository) error {
+func processEventRecord(record events.SQSMessage, baseRepository *repository.BaseRepository, importStatusRepository *repository.ImportStatusRepository) error {
 	b := []byte(record.Body)
 	s3Object := events.S3EventRecord{}
 	if err := json.Unmarshal(b, &s3Object); err != nil {
@@ -184,10 +154,11 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 	bucket := s3Object.S3.Bucket.Name
 	key := s3Object.S3.Object.Key
 
-	var importStatus ImportStatus
-	if err := db.Where("file_path = ?", key).First(&importStatus).Error; err != nil {
+	importStatus, err := importStatusRepository.GetOneByFilePath(key)
+	if err != nil {
 		return err
 	}
+
 	importStatus.Status = PROCESSING
 	if err := baseRepository.Save(&importStatus); err != nil {
 		return err
@@ -211,7 +182,7 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 		if err := baseRepository.Save(&importStatus); err != nil {
 			return err
 		}
-		importDetail := ImportDetail{
+		importDetail := importstatus.ImportDetail{
 			ImportStatusID: importStatus.ID,
 			RowNumber:      nil,
 			Detail:         err.Error(),
@@ -222,14 +193,14 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 		return err
 	}
 
-	if err := validateHeader(csv, &importStatus, baseRepository); err != nil {
+	if err := validateHeader(csv, importStatus, baseRepository); err != nil {
 		var invalidHeaderError *InvalidHeaderError
 		if errors.As(err, &invalidHeaderError) {
 			importStatus.Status = FAILED
 			if err := baseRepository.Save(&importStatus); err != nil {
 				return err
 			}
-			importDetail := ImportDetail{
+			importDetail := importstatus.ImportDetail{
 				ImportStatusID: importStatus.ID,
 				RowNumber:      nil,
 				Detail:         err.Error(),
@@ -241,7 +212,7 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 		return err
 	}
 
-	if err := importCSV(csv, &importStatus, baseRepository); err != nil {
+	if err := importCSV(csv, importStatus, baseRepository); err != nil {
 		return err
 	}
 
@@ -264,7 +235,7 @@ func NewInvalidHeaderError(notExistHeaders []string) *InvalidHeaderError {
 	return &InvalidHeaderError{notExistHeaders: notExistHeaders}
 }
 
-func validateHeader(csv []byte, importStatus *ImportStatus, baseRepository *BaseRepository) error {
+func validateHeader(csv []byte, importStatus *importstatus.ImportStatus, baseRepository *repository.BaseRepository) error {
 	scanner := bufio.NewScanner(bytes.NewBuffer(csv))
 	for scanner.Scan() {
 		unquoted := strings.ReplaceAll(scanner.Text(), "\"", "")
@@ -292,7 +263,7 @@ func validateHeader(csv []byte, importStatus *ImportStatus, baseRepository *Base
 	return nil
 }
 
-func importCSV(csv []byte, importStatus *ImportStatus, baseRepository *BaseRepository) error {
+func importCSV(csv []byte, importStatus *importstatus.ImportStatus, baseRepository *repository.BaseRepository) error {
 	var users []*User
 	err := csvutil.Unmarshal(csv, &users)
 	if err != nil {
@@ -318,9 +289,9 @@ func importCSV(csv []byte, importStatus *ImportStatus, baseRepository *BaseRepos
 	return nil
 }
 
-func importRow(user *User, row int, importStatus *ImportStatus, baseRepository *BaseRepository) error {
+func importRow(user *User, row int, importStatus *importstatus.ImportStatus, baseRepository *repository.BaseRepository) error {
 	if err := validate.Struct(user); err != nil {
-		importDetail := ImportDetail{
+		importDetail := importstatus.ImportDetail{
 			ImportStatusID: importStatus.ID,
 			RowNumber:      &row,
 			Detail:         strings.Join(GetErrorMessages(err), ","),
