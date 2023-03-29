@@ -10,3 +10,10 @@ type ImportDetail struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }
+
+func NewImportDetail(rowNumber *int, detail string) *ImportDetail {
+	return &ImportDetail{
+		RowNumber: rowNumber,
+		Detail:    detail,
+	}
+}

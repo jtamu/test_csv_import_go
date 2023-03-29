@@ -12,8 +12,12 @@ func NewImportStatusRepository(baseRepository *BaseRepository) *ImportStatusRepo
 
 func (i *ImportStatusRepository) GetOneByFilePath(filePath string) (*importstatus.ImportStatus, error) {
 	importstatus := importstatus.ImportStatus{}
-	if err := i.baseRepository.db.Where("file_path = ?", filePath).First(&importstatus).Error; err != nil {
+	if err := i.baseRepository.db.Where("file_path = ?", filePath).Preload("Details").First(&importstatus).Error; err != nil {
 		return nil, err
 	}
 	return &importstatus, nil
+}
+
+func (i *ImportStatusRepository) Save(importStatus *importstatus.ImportStatus) error {
+	return i.baseRepository.Save(importStatus)
 }

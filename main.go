@@ -15,6 +15,7 @@ import (
 
 	"my-s3-function-go/app/domain/importstatus"
 	"my-s3-function-go/app/repository"
+	"my-s3-function-go/config"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/saintfish/chardet"
@@ -47,10 +48,10 @@ var (
 )
 
 const (
-	PENDING    = "Pending"
-	PROCESSING = "Processing"
-	FINISHED   = "Finished"
-	FAILED     = "Failed"
+	PENDING    = config.PENDING
+	PROCESSING = config.PROCESSING
+	FINISHED   = config.FINISHED
+	FAILED     = config.FAILED
 )
 
 type User struct {
@@ -159,8 +160,8 @@ func processEventRecord(record events.SQSMessage, baseRepository *repository.Bas
 		return err
 	}
 
-	importStatus.Status = PROCESSING
-	if err := baseRepository.Save(&importStatus); err != nil {
+	importStatus.Processing()
+	if err := importStatusRepository.Save(importStatus); err != nil {
 		return err
 	}
 
@@ -177,17 +178,8 @@ func processEventRecord(record events.SQSMessage, baseRepository *repository.Bas
 	}
 	csv, err = convertToUTF8(csv)
 	if err != nil {
-		// TODO トランザクション
-		importStatus.Status = FAILED
-		if err := baseRepository.Save(&importStatus); err != nil {
-			return err
-		}
-		importDetail := importstatus.ImportDetail{
-			ImportStatusID: importStatus.ID,
-			RowNumber:      nil,
-			Detail:         err.Error(),
-		}
-		if err := baseRepository.Save(&importDetail); err != nil {
+		importStatus.Failed(err)
+		if err := importStatusRepository.Save(importStatus); err != nil {
 			return err
 		}
 		return err
@@ -196,16 +188,8 @@ func processEventRecord(record events.SQSMessage, baseRepository *repository.Bas
 	if err := validateHeader(csv, importStatus, baseRepository); err != nil {
 		var invalidHeaderError *InvalidHeaderError
 		if errors.As(err, &invalidHeaderError) {
-			importStatus.Status = FAILED
-			if err := baseRepository.Save(&importStatus); err != nil {
-				return err
-			}
-			importDetail := importstatus.ImportDetail{
-				ImportStatusID: importStatus.ID,
-				RowNumber:      nil,
-				Detail:         err.Error(),
-			}
-			if err := baseRepository.Save(&importDetail); err != nil {
+			importStatus.Failed(err)
+			if err := importStatusRepository.Save(importStatus); err != nil {
 				return err
 			}
 		}
