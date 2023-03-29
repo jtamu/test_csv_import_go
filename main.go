@@ -105,7 +105,7 @@ func s3lambda(ctx context.Context, sqsEvent events.SQSEvent) (interface{}, error
 	for i, record := range sqsEvent.Records {
 		// NOTE: 先にループが回ってからgoroutineにスイッチするので、直接recordを渡してしまうと全てのgoroutineに最後のrecordのみが渡されてしまう
 		go func(msg events.SQSMessage, chl chan<- error) {
-			if err := processEventRecord(msg, baseRepository, importStatusRepository); err != nil {
+			if err := processEventRecord(msg, importStatusRepository); err != nil {
 				chl <- err
 				return
 			}
@@ -125,7 +125,7 @@ func s3lambda(ctx context.Context, sqsEvent events.SQSEvent) (interface{}, error
 	return resp, nil
 }
 
-func processEventRecord(record events.SQSMessage, baseRepository *repository.BaseRepository, importStatusRepository *repository.ImportStatusRepository) error {
+func processEventRecord(record events.SQSMessage, importStatusRepository *repository.ImportStatusRepository) error {
 	b := []byte(record.Body)
 	s3Object := events.S3EventRecord{}
 	if err := json.Unmarshal(b, &s3Object); err != nil {
@@ -166,7 +166,7 @@ func processEventRecord(record events.SQSMessage, baseRepository *repository.Bas
 		return err
 	}
 
-	if err := validateHeader(csv, importStatus, baseRepository); err != nil {
+	if err := validateHeader(csv, importStatus); err != nil {
 		var invalidHeaderError *InvalidHeaderError
 		if errors.As(err, &invalidHeaderError) {
 			importStatus.Failed(err)
@@ -177,7 +177,7 @@ func processEventRecord(record events.SQSMessage, baseRepository *repository.Bas
 		return err
 	}
 
-	if err := importCSV(csv, importStatus, baseRepository, importStatusRepository); err != nil {
+	if err := importCSV(csv, importStatus, importStatusRepository); err != nil {
 		return err
 	}
 
@@ -200,7 +200,7 @@ func NewInvalidHeaderError(notExistHeaders []string) *InvalidHeaderError {
 	return &InvalidHeaderError{notExistHeaders: notExistHeaders}
 }
 
-func validateHeader(csv []byte, importStatus *importstatus.ImportStatus, baseRepository *repository.BaseRepository) error {
+func validateHeader(csv []byte, importStatus *importstatus.ImportStatus) error {
 	scanner := bufio.NewScanner(bytes.NewBuffer(csv))
 	for scanner.Scan() {
 		unquoted := strings.ReplaceAll(scanner.Text(), "\"", "")
@@ -228,7 +228,7 @@ func validateHeader(csv []byte, importStatus *importstatus.ImportStatus, baseRep
 	return nil
 }
 
-func importCSV(csv []byte, importStatus *importstatus.ImportStatus, baseRepository *repository.BaseRepository, importStatusRepository *repository.ImportStatusRepository) error {
+func importCSV(csv []byte, importStatus *importstatus.ImportStatus, importStatusRepository *repository.ImportStatusRepository) error {
 	var users []*User
 	err := csvutil.Unmarshal(csv, &users)
 	if err != nil {
@@ -242,7 +242,7 @@ func importCSV(csv []byte, importStatus *importstatus.ImportStatus, baseReposito
 
 	for i, user := range users {
 		row := i + 1
-		if err := importRow(user, row, importStatus, baseRepository, importStatusRepository); err != nil {
+		if err := importRow(user, row, importStatus, importStatusRepository); err != nil {
 			return err
 		}
 
@@ -254,7 +254,7 @@ func importCSV(csv []byte, importStatus *importstatus.ImportStatus, baseReposito
 	return nil
 }
 
-func importRow(user *User, row int, importStatus *importstatus.ImportStatus, baseRepository *repository.BaseRepository, importStatusRepository *repository.ImportStatusRepository) error {
+func importRow(user *User, row int, importStatus *importstatus.ImportStatus, importStatusRepository *repository.ImportStatusRepository) error {
 	if err := validate.Struct(user); err != nil {
 		importStatus.AppendDetail(row, strings.Join(config.GetErrorMessages(err), ","))
 		if err := importStatusRepository.Save(importStatus); err != nil {
