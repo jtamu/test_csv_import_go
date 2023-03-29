@@ -14,7 +14,7 @@ import (
 	"strings"
 
 	"my-s3-function-go/app/domain/importstatus"
-	"my-s3-function-go/app/repository"
+	"my-s3-function-go/app/infrastructure/repository"
 	"my-s3-function-go/config"
 
 	_ "github.com/go-sql-driver/mysql"
