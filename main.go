@@ -140,6 +140,9 @@ func processEventRecord(record events.SQSMessage, importStatusRepository *reposi
 	if err != nil {
 		return err
 	}
+	if err := importStatus.ShouldBePending(); err != nil {
+		return fmt.Errorf("%s。取り込み処理を終了します", err.Error())
+	}
 
 	importStatus.Processing()
 	if err := importStatusRepository.Save(importStatus); err != nil {

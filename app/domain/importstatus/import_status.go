@@ -1,6 +1,7 @@
 package importstatus
 
 import (
+	"fmt"
 	"my-s3-function-go/config"
 	"time"
 )
@@ -16,6 +17,13 @@ type ImportStatus struct {
 	UpdatedAt      time.Time
 
 	Details []*ImportDetail
+}
+
+func (i *ImportStatus) ShouldBePending() error {
+	if i.Status == config.PENDING {
+		return nil
+	}
+	return fmt.Errorf("%sは取り込み待ちステータスではありません", i.FileName)
 }
 
 func (i *ImportStatus) Processing() {
