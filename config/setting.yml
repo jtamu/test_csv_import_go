@@ -1,0 +1,5 @@
+importStatus:
+  pending: Pending
+  processing: Processing
+  finished: Finished
+  failed: Failed

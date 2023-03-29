@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+var status = config.Cfg.ImportStatus
+
 type ImportStatus struct {
 	ID             int `gorm:"primaryKey"`
 	FileName       string
@@ -20,18 +22,18 @@ type ImportStatus struct {
 }
 
 func (i *ImportStatus) ShouldBePending() error {
-	if i.Status == config.PENDING {
+	if i.Status == status.Pending {
 		return nil
 	}
 	return fmt.Errorf("%sは取り込み待ちステータスではありません", i.FileName)
 }
 
 func (i *ImportStatus) Processing() {
-	i.Status = config.PROCESSING
+	i.Status = status.Processing
 }
 
 func (i *ImportStatus) Failed(err error) {
-	i.Status = config.FAILED
+	i.Status = status.Failed
 	i.Details = append(i.Details, NewImportDetail(nil, err.Error()))
 }
 
@@ -40,7 +42,7 @@ func (i *ImportStatus) AppendDetail(row int, msg string) {
 }
 
 func (i *ImportStatus) Finished() {
-	i.Status = config.FINISHED
+	i.Status = status.Finished
 }
 
 func (i *ImportStatus) SetRecordCount(count int) {

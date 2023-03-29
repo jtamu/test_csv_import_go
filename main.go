@@ -43,13 +43,6 @@ var (
 	validate       *validator.Validate
 )
 
-const (
-	PENDING    = config.PENDING
-	PROCESSING = config.PROCESSING
-	FINISHED   = config.FINISHED
-	FAILED     = config.FAILED
-)
-
 type User struct {
 	ID    int    `csv:"id" jaFieldName:"ID" validate:"required"`
 	Name  string `csv:"name" jaFieldName:"ユーザ名" validate:"required"`
