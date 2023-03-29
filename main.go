@@ -21,6 +21,7 @@ import (
 	"github.com/saintfish/chardet"
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/transform"
+	"gopkg.in/go-playground/validator.v9"
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 
@@ -39,6 +40,7 @@ var (
 	db             *gorm.DB
 	sqsSvc         *sqs.SQS
 	baseRepository *repository.BaseRepository
+	validate       *validator.Validate
 )
 
 const (
@@ -89,7 +91,7 @@ func Init() {
 		log.Printf("%+v\n", err)
 		return
 	}
-	config.InitValidator(emails)
+	validate = config.InitValidator(emails)
 }
 
 func s3lambda(ctx context.Context, sqsEvent events.SQSEvent) (interface{}, error) {
@@ -253,7 +255,7 @@ func importCSV(csv []byte, importStatus *importstatus.ImportStatus, baseReposito
 }
 
 func importRow(user *User, row int, importStatus *importstatus.ImportStatus, baseRepository *repository.BaseRepository, importStatusRepository *repository.ImportStatusRepository) error {
-	if err := config.ValidateStruct(user); err != nil {
+	if err := validate.Struct(user); err != nil {
 		importStatus.AppendDetail(row, strings.Join(config.GetErrorMessages(err), ","))
 		if err := importStatusRepository.Save(importStatus); err != nil {
 			return err

@@ -11,17 +11,16 @@ import (
 )
 
 var (
-	uni      *ut.UniversalTranslator
-	validate *validator.Validate
-	trans    ut.Translator
+	uni   *ut.UniversalTranslator
+	trans ut.Translator
 )
 
-func InitValidator(emails []string) {
+func InitValidator(emails []string) *validator.Validate {
 	ja := ja.New()
 	uni = ut.New(ja, ja)
 	t, _ := uni.GetTranslator("ja")
 	trans = t
-	validate = validator.New()
+	validate := validator.New()
 	validate.RegisterTagNameFunc(func(fld reflect.StructField) string {
 		fieldName := fld.Tag.Get("jaFieldName")
 		if fieldName == "-" {
@@ -39,6 +38,7 @@ func InitValidator(emails []string) {
 		msg, _ := trans.T(fe.Tag(), fe.Field())
 		return msg
 	})
+	return validate
 }
 
 func validateUniquenessOfEmail(fl validator.FieldLevel, emails []string) bool {
@@ -48,10 +48,6 @@ func validateUniquenessOfEmail(fl validator.FieldLevel, emails []string) bool {
 		}
 	}
 	return true
-}
-
-func ValidateStruct(s interface{}) error {
-	return validate.Struct(s)
 }
 
 func GetErrorMessages(err error) []string {
