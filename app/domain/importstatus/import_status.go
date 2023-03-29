@@ -26,3 +26,15 @@ func (i *ImportStatus) Failed(err error) {
 	i.Status = config.FAILED
 	i.Details = append(i.Details, NewImportDetail(nil, err.Error()))
 }
+
+func (i *ImportStatus) Finished() {
+	i.Status = config.FINISHED
+}
+
+func (i *ImportStatus) SetRecordCount(count int) {
+	i.RecordCount = count
+}
+
+func (i *ImportStatus) IncrementProcessedCount() {
+	i.ProcessedCount += 1
+}

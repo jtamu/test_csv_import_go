@@ -30,21 +30,15 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/go-playground/locales/ja"
-	ut "github.com/go-playground/universal-translator"
 	"github.com/jszwec/csvutil"
-	"gopkg.in/go-playground/validator.v9"
-	ja_translations "gopkg.in/go-playground/validator.v9/translations/ja"
 )
 
 var (
-	uni      *ut.UniversalTranslator
-	validate *validator.Validate
-	trans    ut.Translator
-	sess     *session.Session
-	svc      *s3.S3
-	db       *gorm.DB
-	sqsSvc   *sqs.SQS
+	sess           *session.Session
+	svc            *s3.S3
+	db             *gorm.DB
+	sqsSvc         *sqs.SQS
+	baseRepository *repository.BaseRepository
 )
 
 const (
@@ -72,6 +66,7 @@ func dbInit() {
 	if err != nil {
 		panic("failed to connect database")
 	}
+	baseRepository = repository.NewBaseRepository(db)
 }
 
 func Init() {
@@ -88,32 +83,16 @@ func Init() {
 	// SQSのクライアントを作成
 	sqsSvc = sqs.New(sess)
 
-	ja := ja.New()
-	uni = ut.New(ja, ja)
-	t, _ := uni.GetTranslator("ja")
-	trans = t
-	validate = validator.New()
-	validate.RegisterTagNameFunc(func(fld reflect.StructField) string {
-		fieldName := fld.Tag.Get("jaFieldName")
-		if fieldName == "-" {
-			return ""
-		}
-		return fieldName
-	})
-	ja_translations.RegisterDefaultTranslations(validate, trans)
-
-	validate.RegisterValidation("email-unique", validateUniquenessOfEmail)
-	validate.RegisterTranslation("email-unique", trans, func(ut ut.Translator) error {
-		trans.Add("email-unique", "{0}が重複しています", false)
-		return nil
-	}, func(ut ut.Translator, fe validator.FieldError) string {
-		msg, _ := trans.T(fe.Tag(), fe.Field())
-		return msg
-	})
+	userRepository := repository.NewUserRepository(baseRepository)
+	emails, err := userRepository.GetAllEmails()
+	if err != nil {
+		log.Printf("%+v\n", err)
+		return
+	}
+	config.InitValidator(emails)
 }
 
 func s3lambda(ctx context.Context, sqsEvent events.SQSEvent) (interface{}, error) {
-	baseRepository := repository.NewBaseRepository(db)
 	importStatusRepository := repository.NewImportStatusRepository(baseRepository)
 
 	ch := make([]chan error, len(sqsEvent.Records))
@@ -196,12 +175,12 @@ func processEventRecord(record events.SQSMessage, baseRepository *repository.Bas
 		return err
 	}
 
-	if err := importCSV(csv, importStatus, baseRepository); err != nil {
+	if err := importCSV(csv, importStatus, baseRepository, importStatusRepository); err != nil {
 		return err
 	}
 
-	importStatus.Status = FINISHED
-	if err := baseRepository.Save(&importStatus); err != nil {
+	importStatus.Finished()
+	if err := importStatusRepository.Save(importStatus); err != nil {
 		return err
 	}
 	return nil
@@ -247,38 +226,38 @@ func validateHeader(csv []byte, importStatus *importstatus.ImportStatus, baseRep
 	return nil
 }
 
-func importCSV(csv []byte, importStatus *importstatus.ImportStatus, baseRepository *repository.BaseRepository) error {
+func importCSV(csv []byte, importStatus *importstatus.ImportStatus, baseRepository *repository.BaseRepository, importStatusRepository *repository.ImportStatusRepository) error {
 	var users []*User
 	err := csvutil.Unmarshal(csv, &users)
 	if err != nil {
 		return err
 	}
 
-	importStatus.RecordCount = len(users)
-	if err := baseRepository.Save(&importStatus); err != nil {
+	importStatus.SetRecordCount(len(users))
+	if err := importStatusRepository.Save(importStatus); err != nil {
 		return err
 	}
 
 	for i, user := range users {
 		row := i + 1
-		if err := importRow(user, row, importStatus, baseRepository); err != nil {
+		if err := importRow(user, row, importStatus, baseRepository, importStatusRepository); err != nil {
 			return err
 		}
 
-		importStatus.ProcessedCount = row
-		if err := baseRepository.Save(&importStatus); err != nil {
+		importStatus.IncrementProcessedCount()
+		if err := importStatusRepository.Save(importStatus); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func importRow(user *User, row int, importStatus *importstatus.ImportStatus, baseRepository *repository.BaseRepository) error {
-	if err := validate.Struct(user); err != nil {
+func importRow(user *User, row int, importStatus *importstatus.ImportStatus, baseRepository *repository.BaseRepository, importStatusRepository *repository.ImportStatusRepository) error {
+	if err := config.ValidateStruct(user); err != nil {
 		importDetail := importstatus.ImportDetail{
 			ImportStatusID: importStatus.ID,
 			RowNumber:      &row,
-			Detail:         strings.Join(GetErrorMessages(err), ","),
+			Detail:         strings.Join(config.GetErrorMessages(err), ","),
 		}
 		if err := baseRepository.Save(&importDetail); err != nil {
 			return err
@@ -294,19 +273,6 @@ func importRow(user *User, row int, importStatus *importstatus.ImportStatus, bas
 		return err
 	}
 	return nil
-}
-
-func validateUniquenessOfEmail(fl validator.FieldLevel) bool {
-	emails := []string{}
-	if err := db.Model(&User{}).Pluck("email", &emails).Error; err != nil {
-		panic(err)
-	}
-	for _, email := range emails {
-		if fl.Field().String() == email {
-			return false
-		}
-	}
-	return true
 }
 
 func sendMessage(msg any, queueURL string) error {
@@ -346,17 +312,6 @@ func convertToUTF8(bytes []byte) ([]byte, error) {
 		return nil, fmt.Errorf("CSVファイルの文字コードが不正です")
 	}
 	return converted, nil
-}
-
-func GetErrorMessages(err error) []string {
-	if err == nil {
-		return []string{}
-	}
-	var messages []string
-	for _, m := range err.(validator.ValidationErrors).Translate(trans) {
-		messages = append(messages, m)
-	}
-	return messages
 }
 
 func main() {
