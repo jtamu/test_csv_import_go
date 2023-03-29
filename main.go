@@ -254,12 +254,8 @@ func importCSV(csv []byte, importStatus *importstatus.ImportStatus, baseReposito
 
 func importRow(user *User, row int, importStatus *importstatus.ImportStatus, baseRepository *repository.BaseRepository, importStatusRepository *repository.ImportStatusRepository) error {
 	if err := config.ValidateStruct(user); err != nil {
-		importDetail := importstatus.ImportDetail{
-			ImportStatusID: importStatus.ID,
-			RowNumber:      &row,
-			Detail:         strings.Join(config.GetErrorMessages(err), ","),
-		}
-		if err := baseRepository.Save(&importDetail); err != nil {
+		importStatus.AppendDetail(row, strings.Join(config.GetErrorMessages(err), ","))
+		if err := importStatusRepository.Save(importStatus); err != nil {
 			return err
 		}
 		return nil

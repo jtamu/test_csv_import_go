@@ -27,6 +27,10 @@ func (i *ImportStatus) Failed(err error) {
 	i.Details = append(i.Details, NewImportDetail(nil, err.Error()))
 }
 
+func (i *ImportStatus) AppendDetail(row int, msg string) {
+	i.Details = append(i.Details, NewImportDetail(&row, msg))
+}
+
 func (i *ImportStatus) Finished() {
 	i.Status = config.FINISHED
 }
