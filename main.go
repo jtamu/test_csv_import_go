@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -222,18 +223,20 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 	}
 
 	if err := validateHeader(csv, &importStatus, baseRepository); err != nil {
-		// TODO: エラーハンドリング
-		importStatus.Status = FAILED
-		if err := baseRepository.Save(&importStatus); err != nil {
-			return err
-		}
-		importDetail := ImportDetail{
-			ImportStatusID: importStatus.ID,
-			RowNumber:      nil,
-			Detail:         err.Error(),
-		}
-		if err := baseRepository.Save(&importDetail); err != nil {
-			return err
+		var invalidHeaderError *InvalidHeaderError
+		if errors.As(err, &invalidHeaderError) {
+			importStatus.Status = FAILED
+			if err := baseRepository.Save(&importStatus); err != nil {
+				return err
+			}
+			importDetail := ImportDetail{
+				ImportStatusID: importStatus.ID,
+				RowNumber:      nil,
+				Detail:         err.Error(),
+			}
+			if err := baseRepository.Save(&importDetail); err != nil {
+				return err
+			}
 		}
 		return err
 	}
@@ -247,6 +250,18 @@ func processEventRecord(record events.SQSMessage, baseRepository *BaseRepository
 		return err
 	}
 	return nil
+}
+
+type InvalidHeaderError struct {
+	notExistHeaders []string
+}
+
+func (i *InvalidHeaderError) Error() string {
+	return fmt.Sprintf("CSVファイルのヘッダが欠損しています: %s", strings.Join(i.notExistHeaders, ","))
+}
+
+func NewInvalidHeaderError(notExistHeaders []string) *InvalidHeaderError {
+	return &InvalidHeaderError{notExistHeaders: notExistHeaders}
 }
 
 func validateHeader(csv []byte, importStatus *ImportStatus, baseRepository *BaseRepository) error {
@@ -269,7 +284,7 @@ func validateHeader(csv []byte, importStatus *ImportStatus, baseRepository *Base
 			notExistHeaders = append(notExistHeaders, csvTag)
 		}
 		if len(notExistHeaders) > 0 {
-			return fmt.Errorf("CSVファイルのヘッダが欠損しています: %s", strings.Join(notExistHeaders, ","))
+			return NewInvalidHeaderError(notExistHeaders)
 		}
 		// ヘッダのみでいいので1行読み終わったら抜ける
 		break
