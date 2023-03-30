@@ -119,7 +119,10 @@ func importCSV[T any](csv []byte, file_path string, importFunc func(*T) error) e
 	for i, model := range models {
 		row := i + 1
 		if err := importRow(model, importFunc, row, importStatus, importStatusRepository); err != nil {
-			return err
+			var validationError *config.ValidationError
+			if !errors.As(err, &validationError) {
+				return err
+			}
 		}
 
 		importStatus.IncrementProcessedCount()
@@ -220,6 +223,13 @@ func importRow[T any](model *T, importFunc func(*T) error, row int, importStatus
 	}
 
 	if err := importFunc(model); err != nil {
+		var validationError *config.ValidationError
+		if errors.As(err, &validationError) {
+			importStatus.AppendDetail(row, err.Error())
+			if err := importStatusRepository.Save(importStatus); err != nil {
+				return err
+			}
+		}
 		return err
 	}
 	return nil

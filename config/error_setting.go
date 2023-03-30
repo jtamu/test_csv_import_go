@@ -30,24 +30,7 @@ func InitValidator(emails []string) *validator.Validate {
 	})
 	ja_translations.RegisterDefaultTranslations(validate, trans)
 
-	validate.RegisterValidation("email-unique", func(fl validator.FieldLevel) bool { return validateUniquenessOfEmail(fl, emails) })
-	validate.RegisterTranslation("email-unique", trans, func(ut ut.Translator) error {
-		trans.Add("email-unique", "{0}が重複しています", false)
-		return nil
-	}, func(ut ut.Translator, fe validator.FieldError) string {
-		msg, _ := trans.T(fe.Tag(), fe.Field())
-		return msg
-	})
 	return validate
-}
-
-func validateUniquenessOfEmail(fl validator.FieldLevel, emails []string) bool {
-	for _, email := range emails {
-		if fl.Field().String() == email {
-			return false
-		}
-	}
-	return true
 }
 
 func GetErrorMessages(err error) []string {
@@ -59,4 +42,16 @@ func GetErrorMessages(err error) []string {
 		messages = append(messages, m)
 	}
 	return messages
+}
+
+type ValidationError struct {
+	msg string
+}
+
+func (v *ValidationError) Error() string {
+	return v.msg
+}
+
+func NewValidationError(msg string) *ValidationError {
+	return &ValidationError{msg: msg}
 }
