@@ -29,14 +29,11 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/jszwec/csvutil"
 )
 
 var (
-	sess           *session.Session
-	svc            *s3.S3
 	db             *gorm.DB
 	baseRepository *repository.BaseRepository
 	validate       *validator.Validate
@@ -59,14 +56,6 @@ func dbInit() {
 
 func Init() {
 	dbInit()
-
-	// セッション
-	sess = session.Must(session.NewSession(&aws.Config{
-		Region: aws.String("ap-northeast-1"),
-	}))
-
-	// S3クライアント
-	svc = s3.New(sess)
 
 	userRepository := repository.NewUserRepository(baseRepository)
 	emails, err := userRepository.GetAllEmails()
@@ -119,7 +108,7 @@ func processEventRecord(record events.SQSMessage, importStatusRepository *reposi
 	bucket := s3Object.S3.Bucket.Name
 	key := s3Object.S3.Object.Key
 
-	obj, err := svc.GetObject(&s3.GetObjectInput{
+	obj, err := config.S3Svc.GetObject(&s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
 	})
