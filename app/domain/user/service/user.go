@@ -7,8 +7,9 @@ import (
 )
 
 type UserService struct {
-	q          Queue
-	repository *repository.UserRepository
+	q                Queue
+	repository       *repository.UserRepository
+	registeredEmails []string
 }
 
 func NewUserService(q Queue) *UserService {
@@ -29,12 +30,14 @@ func (u *UserService) ImportUser(user *user.User) error {
 }
 
 func (u *UserService) validateEmail(email string) error {
-	// TODO: 毎回クエリ発行をやめる
-	emails, err := u.repository.GetAllEmails()
-	if err != nil {
-		return err
+	if u.registeredEmails == nil {
+		emails, err := u.repository.GetAllEmails()
+		if err != nil {
+			return err
+		}
+		u.registeredEmails = emails
 	}
-	for _, otherEmail := range emails {
+	for _, otherEmail := range u.registeredEmails {
 		if email == otherEmail {
 			return config.NewValidationError("メールアドレスが重複しています")
 		}
