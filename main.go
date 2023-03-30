@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"my-s3-function-go/app/domain/importstatus"
+	userService "my-s3-function-go/app/domain/user/service"
 	"my-s3-function-go/app/infrastructure/repository"
 	"my-s3-function-go/config"
 
@@ -42,12 +43,6 @@ var (
 	baseRepository *repository.BaseRepository
 	validate       *validator.Validate
 )
-
-type User struct {
-	ID    int    `csv:"id" jaFieldName:"ID" validate:"required"`
-	Name  string `csv:"name" jaFieldName:"ユーザ名" validate:"required"`
-	Email string `csv:"email" jaFieldName:"メールアドレス" validate:"required,email-unique"`
-}
 
 func dbInit() {
 	USER := os.Getenv("user")
@@ -141,7 +136,7 @@ func processEventRecord(record events.SQSMessage, importStatusRepository *reposi
 		return err
 	}
 
-	if err := importCSV(csv, key, importUser, importStatusRepository); err != nil {
+	if err := importCSV(csv, key, userService.ImportUser, importStatusRepository); err != nil {
 		return err
 	}
 	return nil
@@ -264,42 +259,6 @@ func importRow[T any](model *T, importFunc func(*T) error, row int, importStatus
 	}
 
 	if err := importFunc(model); err != nil {
-		return err
-	}
-	return nil
-
-	// バリデーションOKの場合
-	// 環境変数からキューURLを取得
-	queueURL := os.Getenv("QUEUE_URL")
-
-	if err := sendMessage(model, queueURL); err != nil {
-		return err
-	}
-	return nil
-}
-
-func importUser(user *User) error {
-	// 環境変数からキューURLを取得
-	queueURL := os.Getenv("QUEUE_URL")
-
-	if err := sendMessage(user, queueURL); err != nil {
-		return err
-	}
-	return nil
-}
-
-func sendMessage(msg any, queueURL string) error {
-	// メッセージをJSON化
-	msgJson, err := json.Marshal(msg)
-	if err != nil {
-		return err
-	}
-
-	// SQSに送信 (sqsSvc, queueURLは準備のときに作成したもの)
-	if _, err := sqsSvc.SendMessage(&sqs.SendMessageInput{
-		MessageBody: aws.String(string(msgJson)),
-		QueueUrl:    &queueURL,
-	}); err != nil {
 		return err
 	}
 	return nil

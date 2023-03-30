@@ -4,10 +4,16 @@ import (
 	"log"
 	"os"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/sqs"
 	"gopkg.in/yaml.v2"
 )
 
-var Cfg Config
+var (
+	Cfg    Config
+	SqsSvc *sqs.SQS
+)
 
 type Config struct {
 	ImportStatus ImportStatus `yaml:"importStatus"`
@@ -21,6 +27,14 @@ type ImportStatus struct {
 }
 
 func init() {
+	// セッション
+	sess := session.Must(session.NewSession(&aws.Config{
+		Region: aws.String("ap-northeast-1"),
+	}))
+
+	// SQSのクライアントを作成
+	SqsSvc = sqs.New(sess)
+
 	f, err := os.Open("./config/setting.yml")
 	if err != nil {
 		log.Fatal(err)
