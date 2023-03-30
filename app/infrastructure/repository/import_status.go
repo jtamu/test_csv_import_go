@@ -6,7 +6,7 @@ type ImportStatusRepository struct {
 	baseRepository *BaseRepository
 }
 
-func NewImportStatusRepository(baseRepository *BaseRepository) *ImportStatusRepository {
+func NewImportStatusRepository() *ImportStatusRepository {
 	return &ImportStatusRepository{baseRepository: baseRepository}
 }
 

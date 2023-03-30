@@ -6,7 +6,7 @@ type UserRepository struct {
 	baseRepository *BaseRepository
 }
 
-func NewUserRepository(baseRepository *BaseRepository) *UserRepository {
+func NewUserRepository() *UserRepository {
 	return &UserRepository{baseRepository: baseRepository}
 }
 

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"reflect"
 	"strings"
 
@@ -23,8 +22,6 @@ import (
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/transform"
 	"gopkg.in/go-playground/validator.v9"
-	"gorm.io/driver/mysql"
-	"gorm.io/gorm"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
@@ -34,30 +31,11 @@ import (
 )
 
 var (
-	db             *gorm.DB
-	baseRepository *repository.BaseRepository
-	validate       *validator.Validate
+	validate *validator.Validate
 )
 
-func dbInit() {
-	USER := os.Getenv("user")
-	PASS := os.Getenv("password")
-	HOST := os.Getenv("host")
-	PORT := os.Getenv("port")
-	DBNAME := os.Getenv("dbname")
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8&parseTime=true", USER, PASS, HOST, PORT, DBNAME)
-	var err error
-	db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
-	if err != nil {
-		panic("failed to connect database")
-	}
-	baseRepository = repository.NewBaseRepository(db)
-}
-
 func Init() {
-	dbInit()
-
-	userRepository := repository.NewUserRepository(baseRepository)
+	userRepository := repository.NewUserRepository()
 	emails, err := userRepository.GetAllEmails()
 	if err != nil {
 		log.Printf("%+v\n", err)
@@ -67,7 +45,7 @@ func Init() {
 }
 
 func s3lambda(ctx context.Context, sqsEvent events.SQSEvent) (interface{}, error) {
-	importStatusRepository := repository.NewImportStatusRepository(baseRepository)
+	importStatusRepository := repository.NewImportStatusRepository()
 
 	ch := make([]chan error, len(sqsEvent.Records))
 	for i, _ := range ch {
