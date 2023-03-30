@@ -15,6 +15,7 @@ import (
 	"my-s3-function-go/app/domain/importstatus"
 	userService "my-s3-function-go/app/domain/user/service"
 	"my-s3-function-go/app/infrastructure/repository"
+	"my-s3-function-go/app/infrastructure/storage"
 	"my-s3-function-go/config"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -25,8 +26,6 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/jszwec/csvutil"
 )
 
@@ -86,14 +85,13 @@ func processEventRecord(record events.SQSMessage, importStatusRepository *reposi
 	bucket := s3Object.S3.Bucket.Name
 	key := s3Object.S3.Object.Key
 
-	obj, err := config.S3Svc.GetObject(&s3.GetObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(key),
-	})
+	s3storage := storage.NewS3Storage(bucket)
+	obj, err := s3storage.GetObject(key)
 	if err != nil {
 		return err
 	}
-	csv, err := io.ReadAll(obj.Body)
+
+	csv, err := io.ReadAll(obj)
 	if err != nil {
 		return err
 	}
