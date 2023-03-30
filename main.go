@@ -46,8 +46,6 @@ func Init() {
 }
 
 func s3lambda(ctx context.Context, sqsEvent events.SQSEvent) (interface{}, error) {
-	importStatusRepository := repository.NewImportStatusRepository()
-
 	ch := make([]chan error, len(sqsEvent.Records))
 	for i, _ := range ch {
 		ch[i] = make(chan error)
@@ -56,7 +54,7 @@ func s3lambda(ctx context.Context, sqsEvent events.SQSEvent) (interface{}, error
 	for i, record := range sqsEvent.Records {
 		// NOTE: 先にループが回ってからgoroutineにスイッチするので、直接recordを渡してしまうと全てのgoroutineに最後のrecordのみが渡されてしまう
 		go func(msg events.SQSMessage, chl chan<- error) {
-			if err := processEventRecord(msg, importStatusRepository); err != nil {
+			if err := processEventRecord(msg); err != nil {
 				chl <- err
 				return
 			}
@@ -76,7 +74,7 @@ func s3lambda(ctx context.Context, sqsEvent events.SQSEvent) (interface{}, error
 	return resp, nil
 }
 
-func processEventRecord(record events.SQSMessage, importStatusRepository *repository.ImportStatusRepository) error {
+func processEventRecord(record events.SQSMessage) error {
 	b := []byte(record.Body)
 	s3Object := events.S3EventRecord{}
 	if err := json.Unmarshal(b, &s3Object); err != nil {
@@ -99,7 +97,7 @@ func processEventRecord(record events.SQSMessage, importStatusRepository *reposi
 	}
 
 	userService := userService.NewUserService(queue.NewSQS(os.Getenv("QUEUE_URL")))
-	if err := importCSV(csv, key, userService.ImportUser, importStatusRepository); err != nil {
+	if err := importCSV(csv, key, userService.ImportUser); err != nil {
 		return err
 	}
 	return nil
@@ -146,7 +144,9 @@ func validateHeader[T any](csv []byte, importStatus *importstatus.ImportStatus) 
 	return nil
 }
 
-func importCSV[T any](csv []byte, file_path string, importFunc func(*T) error, importStatusRepository *repository.ImportStatusRepository) error {
+func importCSV[T any](csv []byte, file_path string, importFunc func(*T) error) error {
+	importStatusRepository := repository.NewImportStatusRepository()
+
 	importStatus, err := importStatusRepository.GetOneByFilePath(file_path)
 	if err != nil {
 		return err
