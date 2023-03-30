@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"reflect"
 	"strings"
 
 	"my-s3-function-go/app/domain/importstatus"
 	userService "my-s3-function-go/app/domain/user/service"
+	"my-s3-function-go/app/infrastructure/queue"
 	"my-s3-function-go/app/infrastructure/repository"
 	"my-s3-function-go/app/infrastructure/storage"
 	"my-s3-function-go/config"
@@ -96,6 +98,7 @@ func processEventRecord(record events.SQSMessage, importStatusRepository *reposi
 		return err
 	}
 
+	userService := userService.NewUserService(queue.NewSQS(os.Getenv("QUEUE_URL")))
 	if err := importCSV(csv, key, userService.ImportUser, importStatusRepository); err != nil {
 		return err
 	}
