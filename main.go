@@ -173,9 +173,9 @@ func processEventRecord(record events.SQSMessage, importStatusRepository *reposi
 		return err
 	}
 
-	users := []User{}
+	users := []*User{}
 
-	if err := importCSV(csv, users, importStatus, importStatusRepository); err != nil {
+	if err := importCSV(csv, users, importUser, importStatus, importStatusRepository); err != nil {
 		return err
 	}
 
@@ -226,7 +226,7 @@ func validateHeader(csv []byte, model interface{}, importStatus *importstatus.Im
 	return nil
 }
 
-func importCSV[T any](csv []byte, models []T, importStatus *importstatus.ImportStatus, importStatusRepository *repository.ImportStatusRepository) error {
+func importCSV[T any](csv []byte, models []T, importFunc func(T) error, importStatus *importstatus.ImportStatus, importStatusRepository *repository.ImportStatusRepository) error {
 	err := csvutil.Unmarshal(csv, &models)
 	if err != nil {
 		return err
@@ -239,7 +239,7 @@ func importCSV[T any](csv []byte, models []T, importStatus *importstatus.ImportS
 
 	for i, model := range models {
 		row := i + 1
-		if err := importRow(model, row, importStatus, importStatusRepository); err != nil {
+		if err := importRow(model, importFunc, row, importStatus, importStatusRepository); err != nil {
 			return err
 		}
 
@@ -251,7 +251,7 @@ func importCSV[T any](csv []byte, models []T, importStatus *importstatus.ImportS
 	return nil
 }
 
-func importRow[T any](model T, row int, importStatus *importstatus.ImportStatus, importStatusRepository *repository.ImportStatusRepository) error {
+func importRow[T any](model T, importFunc func(T) error, row int, importStatus *importstatus.ImportStatus, importStatusRepository *repository.ImportStatusRepository) error {
 	if err := validate.Struct(model); err != nil {
 		importStatus.AppendDetail(row, strings.Join(config.GetErrorMessages(err), ","))
 		if err := importStatusRepository.Save(importStatus); err != nil {
@@ -260,11 +260,26 @@ func importRow[T any](model T, row int, importStatus *importstatus.ImportStatus,
 		return nil
 	}
 
+	if err := importFunc(model); err != nil {
+		return err
+	}
+	return nil
+
 	// バリデーションOKの場合
 	// 環境変数からキューURLを取得
 	queueURL := os.Getenv("QUEUE_URL")
 
 	if err := sendMessage(model, queueURL); err != nil {
+		return err
+	}
+	return nil
+}
+
+func importUser(user *User) error {
+	// 環境変数からキューURLを取得
+	queueURL := os.Getenv("QUEUE_URL")
+
+	if err := sendMessage(user, queueURL); err != nil {
 		return err
 	}
 	return nil
