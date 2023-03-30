@@ -1,7 +1,7 @@
 package main
 
 import (
-	"my-s3-function-go/app/adapter"
+	"my-s3-function-go/app/handler"
 
 	_ "github.com/go-sql-driver/mysql"
 
@@ -9,6 +9,6 @@ import (
 )
 
 func main() {
-	adapter.Init()
-	lambda.Start(adapter.S3lambda)
+	handler.Init()
+	lambda.Start(handler.S3lambda)
 }
