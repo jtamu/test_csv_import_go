@@ -25,12 +25,6 @@ import (
 	"golang.org/x/text/transform"
 )
 
-var validate *config.Validator
-
-func Init() {
-	validate = config.Validate
-}
-
 func ProcessEventRecord(record events.SQSMessage) error {
 	b := []byte(record.Body)
 	s3Object := events.S3EventRecord{}
@@ -212,6 +206,7 @@ func validateHeader[T any](csv []byte, importStatus *importstatus.ImportStatus) 
 }
 
 func importRow[T any](model *T, importFunc func(*T) error) error {
+	validate := config.NewValidate()
 	if err := validate.Struct(model); err != nil {
 		return err
 	}
