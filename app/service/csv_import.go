@@ -118,9 +118,14 @@ func importCSV[T any](csv []byte, file_path string, importFunc func(*T) error) e
 
 	for i, model := range models {
 		row := i + 1
-		if err := importRow(model, importFunc, row, importStatus, importStatusRepository); err != nil {
+		if err := importRow(model, importFunc); err != nil {
 			var validationError *config.ValidationError
-			if !errors.As(err, &validationError) {
+			if errors.As(err, &validationError) {
+				importStatus.AppendDetail(row, err.Error())
+				if err := importStatusRepository.Save(importStatus); err != nil {
+					return err
+				}
+			} else {
 				return err
 			}
 		}
@@ -213,23 +218,12 @@ func validateHeader[T any](csv []byte, importStatus *importstatus.ImportStatus) 
 	return nil
 }
 
-func importRow[T any](model *T, importFunc func(*T) error, row int, importStatus *importstatus.ImportStatus, importStatusRepository *repository.ImportStatusRepository) error {
+func importRow[T any](model *T, importFunc func(*T) error) error {
 	if err := validate.Struct(model); err != nil {
-		importStatus.AppendDetail(row, strings.Join(config.GetErrorMessages(err), ","))
-		if err := importStatusRepository.Save(importStatus); err != nil {
-			return err
-		}
-		return nil
+		return config.NewValidationError(strings.Join(config.GetErrorMessages(err), ","))
 	}
 
 	if err := importFunc(model); err != nil {
-		var validationError *config.ValidationError
-		if errors.As(err, &validationError) {
-			importStatus.AppendDetail(row, err.Error())
-			if err := importStatusRepository.Save(importStatus); err != nil {
-				return err
-			}
-		}
 		return err
 	}
 	return nil
