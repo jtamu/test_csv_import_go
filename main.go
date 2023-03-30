@@ -153,18 +153,13 @@ func processEventRecord(record events.SQSMessage, importStatusRepository *reposi
 	if err != nil {
 		return err
 	}
-	csv, err = convertToUTF8(csv)
-	if err != nil {
-		importStatus.Failed(err)
-		if err := importStatusRepository.Save(importStatus); err != nil {
-			return err
-		}
-		return err
-	}
 
 	if err := importCSV(csv, importUser, importStatus, importStatusRepository); err != nil {
-		var invalidHeaderError *InvalidHeaderError
-		if errors.As(err, &invalidHeaderError) {
+		var (
+			invalidFileFormatError *InvalidFileFormatError
+			invalidHeaderError     *InvalidHeaderError
+		)
+		if errors.As(err, &invalidFileFormatError) || errors.As(err, &invalidHeaderError) {
 			importStatus.Failed(err)
 			if err := importStatusRepository.Save(importStatus); err != nil {
 				return err
@@ -222,13 +217,17 @@ func validateHeader[T any](csv []byte, importStatus *importstatus.ImportStatus) 
 }
 
 func importCSV[T any](csv []byte, importFunc func(*T) error, importStatus *importstatus.ImportStatus, importStatusRepository *repository.ImportStatusRepository) error {
+	csv, err := convertToUTF8(csv)
+	if err != nil {
+		return err
+	}
+
 	if err := validateHeader[T](csv, importStatus); err != nil {
 		return err
 	}
 
 	models := []*T{}
-	err := csvutil.Unmarshal(csv, &models)
-	if err != nil {
+	if err := csvutil.Unmarshal(csv, &models); err != nil {
 		return err
 	}
 
@@ -302,6 +301,18 @@ func sendMessage(msg any, queueURL string) error {
 	return nil
 }
 
+type InvalidFileFormatError struct {
+	msg string
+}
+
+func (i *InvalidFileFormatError) Error() string {
+	return i.msg
+}
+
+func NewInvalidFileFormatError(msg string) *InvalidFileFormatError {
+	return &InvalidFileFormatError{msg: msg}
+}
+
 func convertToUTF8(bytes []byte) ([]byte, error) {
 	detector := chardet.NewTextDetector()
 	result, err := detector.DetectBest(bytes)
@@ -319,7 +330,7 @@ func convertToUTF8(bytes []byte) ([]byte, error) {
 	case s == "UTF-8" || strings.Contains(s, "ISO-8859"):
 		converted = bytes
 	default:
-		return nil, fmt.Errorf("CSVファイルの文字コードが不正です")
+		return nil, NewInvalidFileFormatError("CSVファイルの文字コードが不正です")
 	}
 	return converted, nil
 }
