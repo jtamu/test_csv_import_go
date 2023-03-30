@@ -8,6 +8,13 @@ import (
 	"github.com/aws/aws-sdk-go/service/sqs"
 )
 
+var sqsSvc *sqs.SQS
+
+func init() {
+	// SQSのクライアントを作成
+	sqsSvc = sqs.New(config.AwsSess)
+}
+
 type SQS struct {
 	url string
 }
@@ -25,7 +32,7 @@ func (s *SQS) SendMessage(message any) error {
 		return err
 	}
 
-	if _, err := config.SqsSvc.SendMessage(&sqs.SendMessageInput{
+	if _, err := sqsSvc.SendMessage(&sqs.SendMessageInput{
 		MessageBody: aws.String(string(msgJson)),
 		QueueUrl:    &s.url,
 	}); err != nil {
