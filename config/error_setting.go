@@ -2,6 +2,7 @@ package config
 
 import (
 	"reflect"
+	"strings"
 
 	ja_translations "gopkg.in/go-playground/validator.v9/translations/ja"
 
@@ -11,15 +12,23 @@ import (
 )
 
 var (
-	uni   *ut.UniversalTranslator
-	trans ut.Translator
+	Validate *Validator
 )
 
-func InitValidator(emails []string) *validator.Validate {
+func init() {
+	Validate = NewValidate()
+}
+
+type Validator struct {
+	validate *validator.Validate
+	trans    ut.Translator
+}
+
+func NewValidate() *Validator {
 	ja := ja.New()
-	uni = ut.New(ja, ja)
+	uni := ut.New(ja, ja)
 	t, _ := uni.GetTranslator("ja")
-	trans = t
+	trans := t
 	validate := validator.New()
 	validate.RegisterTagNameFunc(func(fld reflect.StructField) string {
 		fieldName := fld.Tag.Get("jaFieldName")
@@ -30,15 +39,25 @@ func InitValidator(emails []string) *validator.Validate {
 	})
 	ja_translations.RegisterDefaultTranslations(validate, trans)
 
-	return validate
+	return &Validator{
+		validate: validate,
+		trans:    trans,
+	}
 }
 
-func GetErrorMessages(err error) []string {
+func (v *Validator) Struct(obj any) error {
+	if err := v.validate.Struct(obj); err != nil {
+		return NewValidationError(strings.Join(v.getErrorMessages(err), ","))
+	}
+	return nil
+}
+
+func (v *Validator) getErrorMessages(err error) []string {
 	if err == nil {
 		return []string{}
 	}
 	var messages []string
-	for _, m := range err.(validator.ValidationErrors).Translate(trans) {
+	for _, m := range err.(validator.ValidationErrors).Translate(v.trans) {
 		messages = append(messages, m)
 	}
 	return messages

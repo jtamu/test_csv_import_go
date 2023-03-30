@@ -23,19 +23,12 @@ import (
 	"github.com/saintfish/chardet"
 	"golang.org/x/text/encoding/japanese"
 	"golang.org/x/text/transform"
-	"gopkg.in/go-playground/validator.v9"
 )
 
-var validate *validator.Validate
+var validate *config.Validator
 
 func Init() {
-	userRepository := repository.NewUserRepository()
-	emails, err := userRepository.GetAllEmails()
-	if err != nil {
-		log.Printf("%+v\n", err)
-		return
-	}
-	validate = config.InitValidator(emails)
+	validate = config.Validate
 }
 
 func ProcessEventRecord(record events.SQSMessage) error {
@@ -220,7 +213,7 @@ func validateHeader[T any](csv []byte, importStatus *importstatus.ImportStatus) 
 
 func importRow[T any](model *T, importFunc func(*T) error) error {
 	if err := validate.Struct(model); err != nil {
-		return config.NewValidationError(strings.Join(config.GetErrorMessages(err), ","))
+		return err
 	}
 
 	if err := importFunc(model); err != nil {
