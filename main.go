@@ -155,21 +155,6 @@ func processEventRecord(record events.SQSMessage, importStatusRepository *reposi
 	}
 
 	if err := importCSV(csv, importUser, importStatus, importStatusRepository); err != nil {
-		var (
-			invalidFileFormatError *InvalidFileFormatError
-			invalidHeaderError     *InvalidHeaderError
-		)
-		if errors.As(err, &invalidFileFormatError) || errors.As(err, &invalidHeaderError) {
-			importStatus.Failed(err)
-			if err := importStatusRepository.Save(importStatus); err != nil {
-				return err
-			}
-		}
-		return err
-	}
-
-	importStatus.Finished()
-	if err := importStatusRepository.Save(importStatus); err != nil {
 		return err
 	}
 	return nil
@@ -219,10 +204,24 @@ func validateHeader[T any](csv []byte, importStatus *importstatus.ImportStatus) 
 func importCSV[T any](csv []byte, importFunc func(*T) error, importStatus *importstatus.ImportStatus, importStatusRepository *repository.ImportStatusRepository) error {
 	csv, err := convertToUTF8(csv)
 	if err != nil {
+		var invalidFileFormatError *InvalidFileFormatError
+		if errors.As(err, &invalidFileFormatError) {
+			importStatus.Failed(err)
+			if err := importStatusRepository.Save(importStatus); err != nil {
+				return err
+			}
+		}
 		return err
 	}
 
 	if err := validateHeader[T](csv, importStatus); err != nil {
+		var invalidHeaderError *InvalidHeaderError
+		if errors.As(err, &invalidHeaderError) {
+			importStatus.Failed(err)
+			if err := importStatusRepository.Save(importStatus); err != nil {
+				return err
+			}
+		}
 		return err
 	}
 
@@ -246,6 +245,11 @@ func importCSV[T any](csv []byte, importFunc func(*T) error, importStatus *impor
 		if err := importStatusRepository.Save(importStatus); err != nil {
 			return err
 		}
+	}
+
+	importStatus.Finished()
+	if err := importStatusRepository.Save(importStatus); err != nil {
+		return err
 	}
 	return nil
 }
