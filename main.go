@@ -162,7 +162,7 @@ func processEventRecord(record events.SQSMessage, importStatusRepository *reposi
 		return err
 	}
 
-	if err := validateHeader(csv, importStatus); err != nil {
+	if err := validateHeader(csv, User{}, importStatus); err != nil {
 		var invalidHeaderError *InvalidHeaderError
 		if errors.As(err, &invalidHeaderError) {
 			importStatus.Failed(err)
@@ -173,7 +173,9 @@ func processEventRecord(record events.SQSMessage, importStatusRepository *reposi
 		return err
 	}
 
-	if err := importCSV(csv, importStatus, importStatusRepository); err != nil {
+	users := []User{}
+
+	if err := importCSV(csv, users, importStatus, importStatusRepository); err != nil {
 		return err
 	}
 
@@ -196,7 +198,7 @@ func NewInvalidHeaderError(notExistHeaders []string) *InvalidHeaderError {
 	return &InvalidHeaderError{notExistHeaders: notExistHeaders}
 }
 
-func validateHeader(csv []byte, importStatus *importstatus.ImportStatus) error {
+func validateHeader(csv []byte, model interface{}, importStatus *importstatus.ImportStatus) error {
 	scanner := bufio.NewScanner(bytes.NewBuffer(csv))
 	for scanner.Scan() {
 		unquoted := strings.ReplaceAll(scanner.Text(), "\"", "")
@@ -204,7 +206,7 @@ func validateHeader(csv []byte, importStatus *importstatus.ImportStatus) error {
 
 		notExistHeaders := []string{}
 
-		t := reflect.TypeOf(User{})
+		t := reflect.TypeOf(model)
 	L:
 		for i := 0; i < t.NumField(); i++ {
 			csvTag := t.Field(i).Tag.Get("csv")
@@ -224,21 +226,20 @@ func validateHeader(csv []byte, importStatus *importstatus.ImportStatus) error {
 	return nil
 }
 
-func importCSV(csv []byte, importStatus *importstatus.ImportStatus, importStatusRepository *repository.ImportStatusRepository) error {
-	var users []*User
-	err := csvutil.Unmarshal(csv, &users)
+func importCSV[T any](csv []byte, models []T, importStatus *importstatus.ImportStatus, importStatusRepository *repository.ImportStatusRepository) error {
+	err := csvutil.Unmarshal(csv, &models)
 	if err != nil {
 		return err
 	}
 
-	importStatus.SetRecordCount(len(users))
+	importStatus.SetRecordCount(len(models))
 	if err := importStatusRepository.Save(importStatus); err != nil {
 		return err
 	}
 
-	for i, user := range users {
+	for i, model := range models {
 		row := i + 1
-		if err := importRow(user, row, importStatus, importStatusRepository); err != nil {
+		if err := importRow(model, row, importStatus, importStatusRepository); err != nil {
 			return err
 		}
 
@@ -250,8 +251,8 @@ func importCSV(csv []byte, importStatus *importstatus.ImportStatus, importStatus
 	return nil
 }
 
-func importRow(user *User, row int, importStatus *importstatus.ImportStatus, importStatusRepository *repository.ImportStatusRepository) error {
-	if err := validate.Struct(user); err != nil {
+func importRow[T any](model T, row int, importStatus *importstatus.ImportStatus, importStatusRepository *repository.ImportStatusRepository) error {
+	if err := validate.Struct(model); err != nil {
 		importStatus.AppendDetail(row, strings.Join(config.GetErrorMessages(err), ","))
 		if err := importStatusRepository.Save(importStatus); err != nil {
 			return err
@@ -263,7 +264,7 @@ func importRow(user *User, row int, importStatus *importstatus.ImportStatus, imp
 	// 環境変数からキューURLを取得
 	queueURL := os.Getenv("QUEUE_URL")
 
-	if err := sendMessage(user, queueURL); err != nil {
+	if err := sendMessage(model, queueURL); err != nil {
 		return err
 	}
 	return nil
