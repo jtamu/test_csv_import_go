@@ -162,7 +162,9 @@ func processEventRecord(record events.SQSMessage, importStatusRepository *reposi
 		return err
 	}
 
-	if err := validateHeader(csv, User{}, importStatus); err != nil {
+	users := []*User{}
+
+	if err := importCSV(csv, users, importUser, importStatus, importStatusRepository); err != nil {
 		var invalidHeaderError *InvalidHeaderError
 		if errors.As(err, &invalidHeaderError) {
 			importStatus.Failed(err)
@@ -170,12 +172,6 @@ func processEventRecord(record events.SQSMessage, importStatusRepository *reposi
 				return err
 			}
 		}
-		return err
-	}
-
-	users := []*User{}
-
-	if err := importCSV(csv, users, importUser, importStatus, importStatusRepository); err != nil {
 		return err
 	}
 
@@ -198,7 +194,7 @@ func NewInvalidHeaderError(notExistHeaders []string) *InvalidHeaderError {
 	return &InvalidHeaderError{notExistHeaders: notExistHeaders}
 }
 
-func validateHeader(csv []byte, model interface{}, importStatus *importstatus.ImportStatus) error {
+func validateHeader[T any](csv []byte, model *T, importStatus *importstatus.ImportStatus) error {
 	scanner := bufio.NewScanner(bytes.NewBuffer(csv))
 	for scanner.Scan() {
 		unquoted := strings.ReplaceAll(scanner.Text(), "\"", "")
@@ -206,7 +202,7 @@ func validateHeader(csv []byte, model interface{}, importStatus *importstatus.Im
 
 		notExistHeaders := []string{}
 
-		t := reflect.TypeOf(model)
+		t := reflect.TypeOf(*model)
 	L:
 		for i := 0; i < t.NumField(); i++ {
 			csvTag := t.Field(i).Tag.Get("csv")
@@ -226,7 +222,12 @@ func validateHeader(csv []byte, model interface{}, importStatus *importstatus.Im
 	return nil
 }
 
-func importCSV[T any](csv []byte, models []T, importFunc func(T) error, importStatus *importstatus.ImportStatus, importStatusRepository *repository.ImportStatusRepository) error {
+func importCSV[T any](csv []byte, models []*T, importFunc func(*T) error, importStatus *importstatus.ImportStatus, importStatusRepository *repository.ImportStatusRepository) error {
+	model := new(T)
+	if err := validateHeader(csv, model, importStatus); err != nil {
+		return err
+	}
+
 	err := csvutil.Unmarshal(csv, &models)
 	if err != nil {
 		return err
@@ -251,7 +252,7 @@ func importCSV[T any](csv []byte, models []T, importFunc func(T) error, importSt
 	return nil
 }
 
-func importRow[T any](model T, importFunc func(T) error, row int, importStatus *importstatus.ImportStatus, importStatusRepository *repository.ImportStatusRepository) error {
+func importRow[T any](model *T, importFunc func(*T) error, row int, importStatus *importstatus.ImportStatus, importStatusRepository *repository.ImportStatusRepository) error {
 	if err := validate.Struct(model); err != nil {
 		importStatus.AppendDetail(row, strings.Join(config.GetErrorMessages(err), ","))
 		if err := importStatusRepository.Save(importStatus); err != nil {
