@@ -35,7 +35,7 @@ func init() {
 	// SQSのクライアントを作成
 	SqsSvc = sqs.New(sess)
 
-	f, err := os.Open("./config/setting.yml")
+	f, err := os.Open("./setting.yml")
 	if err != nil {
 		log.Fatal(err)
 	}
