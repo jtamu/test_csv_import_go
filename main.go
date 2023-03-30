@@ -31,7 +31,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/jszwec/csvutil"
 )
 
@@ -39,7 +38,6 @@ var (
 	sess           *session.Session
 	svc            *s3.S3
 	db             *gorm.DB
-	sqsSvc         *sqs.SQS
 	baseRepository *repository.BaseRepository
 	validate       *validator.Validate
 )
@@ -69,9 +67,6 @@ func Init() {
 
 	// S3クライアント
 	svc = s3.New(sess)
-
-	// SQSのクライアントを作成
-	sqsSvc = sqs.New(sess)
 
 	userRepository := repository.NewUserRepository(baseRepository)
 	emails, err := userRepository.GetAllEmails()
