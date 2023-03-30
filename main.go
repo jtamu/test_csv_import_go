@@ -129,19 +129,6 @@ func processEventRecord(record events.SQSMessage, importStatusRepository *reposi
 	bucket := s3Object.S3.Bucket.Name
 	key := s3Object.S3.Object.Key
 
-	importStatus, err := importStatusRepository.GetOneByFilePath(key)
-	if err != nil {
-		return err
-	}
-	if err := importStatus.ShouldBePending(); err != nil {
-		return fmt.Errorf("%s。取り込み処理を終了します", err.Error())
-	}
-
-	importStatus.Processing()
-	if err := importStatusRepository.Save(importStatus); err != nil {
-		return err
-	}
-
 	obj, err := svc.GetObject(&s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
@@ -154,7 +141,7 @@ func processEventRecord(record events.SQSMessage, importStatusRepository *reposi
 		return err
 	}
 
-	if err := importCSV(csv, importUser, importStatus, importStatusRepository); err != nil {
+	if err := importCSV(csv, key, importUser, importStatusRepository); err != nil {
 		return err
 	}
 	return nil
@@ -201,8 +188,21 @@ func validateHeader[T any](csv []byte, importStatus *importstatus.ImportStatus) 
 	return nil
 }
 
-func importCSV[T any](csv []byte, importFunc func(*T) error, importStatus *importstatus.ImportStatus, importStatusRepository *repository.ImportStatusRepository) error {
-	csv, err := convertToUTF8(csv)
+func importCSV[T any](csv []byte, file_path string, importFunc func(*T) error, importStatusRepository *repository.ImportStatusRepository) error {
+	importStatus, err := importStatusRepository.GetOneByFilePath(file_path)
+	if err != nil {
+		return err
+	}
+	if err := importStatus.ShouldBePending(); err != nil {
+		return fmt.Errorf("%s。取り込み処理を終了します", err.Error())
+	}
+
+	importStatus.Processing()
+	if err := importStatusRepository.Save(importStatus); err != nil {
+		return err
+	}
+
+	csv, err = convertToUTF8(csv)
 	if err != nil {
 		var invalidFileFormatError *InvalidFileFormatError
 		if errors.As(err, &invalidFileFormatError) {
