@@ -1,34 +1,21 @@
 package service
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	csvService "my-s3-function-go/app/domain/csv/service"
 	userService "my-s3-function-go/app/domain/user/service"
 	"my-s3-function-go/app/infrastructure/repository"
 	"my-s3-function-go/config"
 	"my-s3-function-go/di"
 
-	"github.com/aws/aws-lambda-go/events"
 	"github.com/jszwec/csvutil"
 )
 
-func ProcessEventRecord(record events.SQSMessage) error {
-	b := []byte(record.Body)
-	s3Object := events.S3EventRecord{}
-	if err := json.Unmarshal(b, &s3Object); err != nil {
-		return err
-	}
-	log.Printf("%+v\n", s3Object)
-
-	bucket := s3Object.S3.Bucket.Name
-	key := s3Object.S3.Object.Key
-
-	inputStorage := di.DIObj.GetInputStorage(bucket)
-	obj, err := inputStorage.GetObject(key)
+func ProcessEventRecord(inputBaseUrl, inputFilePath string) error {
+	inputStorage := di.DIObj.GetInputStorage(inputBaseUrl)
+	obj, err := inputStorage.GetObject(inputFilePath)
 	if err != nil {
 		return err
 	}
@@ -39,7 +26,7 @@ func ProcessEventRecord(record events.SQSMessage) error {
 	}
 
 	userService := userService.NewUserService(di.DIObj.GetUserQueue())
-	if err := importCSV(csv, key, userService.ImportUser); err != nil {
+	if err := importCSV(csv, inputFilePath, userService.ImportUser); err != nil {
 		return err
 	}
 	return nil
