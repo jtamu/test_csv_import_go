@@ -8,11 +8,10 @@ import (
 	"log"
 	csvService "my-s3-function-go/app/domain/csv/service"
 	userService "my-s3-function-go/app/domain/user/service"
-	"my-s3-function-go/app/infrastructure/queue"
 	"my-s3-function-go/app/infrastructure/repository"
 	"my-s3-function-go/app/infrastructure/storage"
 	"my-s3-function-go/config"
-	"os"
+	"my-s3-function-go/di"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/jszwec/csvutil"
@@ -40,7 +39,7 @@ func ProcessEventRecord(record events.SQSMessage) error {
 		return err
 	}
 
-	userService := userService.NewUserService(queue.NewSQS(os.Getenv("QUEUE_URL")))
+	userService := userService.NewUserService(di.DIObj.GetUserQueue())
 	if err := importCSV(csv, key, userService.ImportUser); err != nil {
 		return err
 	}

@@ -1,18 +1,19 @@
 package service
 
 import (
+	"my-s3-function-go/app/domain/queue"
 	"my-s3-function-go/app/domain/user"
 	"my-s3-function-go/app/infrastructure/repository"
 	"my-s3-function-go/config"
 )
 
 type UserService struct {
-	q                Queue
+	q                queue.Queue
 	repository       *repository.UserRepository
 	registeredEmails []string
 }
 
-func NewUserService(q Queue) *UserService {
+func NewUserService(q queue.Queue) *UserService {
 	return &UserService{
 		q:          q,
 		repository: repository.NewUserRepository(),
@@ -43,8 +44,4 @@ func (u *UserService) validateEmail(email string) error {
 		}
 	}
 	return nil
-}
-
-type Queue interface {
-	SendMessage(any) error
 }
