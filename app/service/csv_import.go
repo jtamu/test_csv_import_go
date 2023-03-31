@@ -9,7 +9,6 @@ import (
 	csvService "my-s3-function-go/app/domain/csv/service"
 	userService "my-s3-function-go/app/domain/user/service"
 	"my-s3-function-go/app/infrastructure/repository"
-	"my-s3-function-go/app/infrastructure/storage"
 	"my-s3-function-go/config"
 	"my-s3-function-go/di"
 
@@ -28,8 +27,8 @@ func ProcessEventRecord(record events.SQSMessage) error {
 	bucket := s3Object.S3.Bucket.Name
 	key := s3Object.S3.Object.Key
 
-	s3storage := storage.NewS3Storage(bucket)
-	obj, err := s3storage.GetObject(key)
+	inputStorage := di.DIObj.GetInputStorage(bucket)
+	obj, err := inputStorage.GetObject(key)
 	if err != nil {
 		return err
 	}
