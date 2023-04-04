@@ -11,7 +11,7 @@ import (
 	"my-s3-function-go/config"
 	"my-s3-function-go/di"
 	"os"
-	"path/filepath"
+	"strings"
 
 	"github.com/jszwec/csvutil"
 )
@@ -32,8 +32,9 @@ func ProcessEventRecord(inputBaseUrl, inputFilePath string) error {
 		return err
 	}
 
-	importTarget := filepath.Dir(inputFilePath)
-	switch importTarget {
+	inputEntries := strings.Split(inputFilePath, "/")
+	importType := inputEntries[0]
+	switch importType {
 	case "user":
 		userQueue := diContainer.GetQueue(os.Getenv(cfg.Queue.UserQueue))
 		userService := userService.NewUserService(userQueue)
