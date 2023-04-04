@@ -1,5 +1,6 @@
-.*
 main
 main.zip
+
+.devcontainer/
 test/
 Main/

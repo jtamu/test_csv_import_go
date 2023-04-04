@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v2"
 )
 
@@ -35,6 +36,10 @@ type Queue struct {
 }
 
 func init() {
+	if err := godotenv.Load(".env"); err != nil {
+		log.Fatal("cannot load env file.")
+	}
+
 	f, err := os.Open("./setting.yml")
 	if err != nil {
 		log.Fatal(err)
