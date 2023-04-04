@@ -9,12 +9,15 @@ import (
 	"my-s3-function-go/app/infrastructure/repository"
 	"my-s3-function-go/config"
 	"my-s3-function-go/di"
+	"os"
 
 	"github.com/jszwec/csvutil"
 )
 
 func ProcessEventRecord(inputBaseUrl, inputFilePath string) error {
-	inputStorage := di.DIObj.GetInputStorage(inputBaseUrl)
+	diContainer := di.NewDIContainer()
+
+	inputStorage := diContainer.GetStorage(inputBaseUrl)
 	obj, err := inputStorage.GetObject(inputFilePath)
 	if err != nil {
 		return err
@@ -25,7 +28,8 @@ func ProcessEventRecord(inputBaseUrl, inputFilePath string) error {
 		return err
 	}
 
-	userService := userService.NewUserService(di.DIObj.GetUserQueue())
+	userQueue := diContainer.GetQueue(os.Getenv("QUEUE_URL"))
+	userService := userService.NewUserService(userQueue)
 	if err := importCSV(csv, inputFilePath, userService.ImportUser); err != nil {
 		return err
 	}
