@@ -11,6 +11,8 @@ var Cfg Config
 
 type Config struct {
 	ImportStatus ImportStatus `yaml:"importStatus"`
+	DB           DB           `yaml:"db"`
+	Queue        Queue        `yaml:"queue"`
 }
 
 type ImportStatus struct {
@@ -18,6 +20,18 @@ type ImportStatus struct {
 	Processing string `yaml:"processing"`
 	Finished   string `yaml:"finished"`
 	Failed     string `yaml:"failed"`
+}
+
+type DB struct {
+	User     string `yaml:"user"`
+	Password string `yaml:"password"`
+	Host     string `yaml:"host"`
+	Port     string `yaml:"port"`
+	DBName   string `yaml:"dbname"`
+}
+
+type Queue struct {
+	UserQueue string `yaml:"userQueue"`
 }
 
 func init() {

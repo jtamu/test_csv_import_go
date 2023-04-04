@@ -14,6 +14,8 @@ import (
 	"github.com/jszwec/csvutil"
 )
 
+var cfg = config.Cfg
+
 func ProcessEventRecord(inputBaseUrl, inputFilePath string) error {
 	diContainer := di.NewDIContainer()
 
@@ -28,7 +30,7 @@ func ProcessEventRecord(inputBaseUrl, inputFilePath string) error {
 		return err
 	}
 
-	userQueue := diContainer.GetQueue(os.Getenv("QUEUE_URL"))
+	userQueue := diContainer.GetQueue(os.Getenv(cfg.Queue.UserQueue))
 	userService := userService.NewUserService(userQueue)
 	if err := importCSV(csv, inputFilePath, userService.ImportUser); err != nil {
 		return err

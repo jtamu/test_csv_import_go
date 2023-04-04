@@ -3,3 +3,13 @@ importStatus:
   processing: Processing
   finished: Finished
   failed: Failed
+
+db:
+  user: user
+  password: password
+  host: host
+  port: port
+  dbname: dbname
+
+queue:
+  userQueue: QUEUE_URL
