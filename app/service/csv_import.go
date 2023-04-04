@@ -4,12 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	csvService "my-s3-function-go/app/domain/csv/service"
 	userService "my-s3-function-go/app/domain/user/service"
 	"my-s3-function-go/app/infrastructure/repository"
 	"my-s3-function-go/config"
 	"my-s3-function-go/di"
 	"os"
+	"path/filepath"
 
 	"github.com/jszwec/csvutil"
 )
@@ -30,10 +32,16 @@ func ProcessEventRecord(inputBaseUrl, inputFilePath string) error {
 		return err
 	}
 
-	userQueue := diContainer.GetQueue(os.Getenv(cfg.Queue.UserQueue))
-	userService := userService.NewUserService(userQueue)
-	if err := importCSV(csv, inputFilePath, userService.ImportUser); err != nil {
-		return err
+	importTarget := filepath.Dir(inputFilePath)
+	switch importTarget {
+	case "user":
+		userQueue := diContainer.GetQueue(os.Getenv(cfg.Queue.UserQueue))
+		userService := userService.NewUserService(userQueue)
+		if err := importCSV(csv, inputFilePath, userService.ImportUser); err != nil {
+			return err
+		}
+	default:
+		log.Fatalf("invalid file path: %s", inputFilePath)
 	}
 	return nil
 }
